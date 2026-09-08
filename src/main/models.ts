@@ -3,6 +3,7 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { net } from 'electron'
 import type { ModelInfo } from '@shared/types'
 import { modelsDir } from './paths'
 
@@ -59,8 +60,20 @@ export async function downloadModel(
   const dest = modelPath(id)
   const part = `${dest}.part`
 
-  const res = await fetch(model.url)
-  if (!res.ok || !res.body) throw new Error(`Download failed (HTTP ${res.status})`)
+  // Electron's net.* uses Chromium networking: system proxy, TLS roots, HTTP/2
+  // and redirect-following — far more reliable than Node fetch in a packaged app.
+  let res: Response
+  try {
+    res = await net.fetch(model.url, { redirect: 'follow' })
+  } catch (err) {
+    const cause =
+      (err as { cause?: { message?: string } })?.cause?.message ||
+      (err instanceof Error ? err.message : String(err))
+    throw new Error(
+      `Couldn't reach the model host. Check the internet connection and try again.\n(${cause})`,
+    )
+  }
+  if (!res.ok || !res.body) throw new Error(`Model download failed — HTTP ${res.status}`)
 
   const total = Number(res.headers.get('content-length')) || model.approxMB * 1e6
   let received = 0
