@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+*.log
+
+# Fetched at build time by scripts/fetch-binaries.mjs
+resources/bin/
+resources/fonts/
+src/renderer/public/fonts/
+
+_t/
+.DS_Store

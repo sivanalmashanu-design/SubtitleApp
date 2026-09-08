@@ -1,0 +1,92 @@
+name: Build installers
+
+on:
+  workflow_dispatch: {} # run manually from the Actions tab
+  push:
+    tags: ['v*'] # tagging v1.2.3 also publishes a GitHub Release
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon runner -> arm64 .dmg
+            platform: mac
+            args: --mac
+          - os: windows-latest
+            platform: win
+            args: --win
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch / build native binaries (whisper-cli + ffmpeg + fonts)
+        run: npm run fetch-binaries
+
+      - name: Verify bundled ffmpeg has libass
+        shell: bash
+        run: |
+          BIN="resources/bin/${{ matrix.platform }}"
+          echo "Contents of $BIN:"; ls -la "$BIN"
+          FF="$BIN/ffmpeg"; [ "${{ matrix.platform }}" = "win" ] && FF="$BIN/ffmpeg.exe"
+          "$FF" -hide_banner -version | grep -q -- '--enable-libass' \
+            || { echo "::error::bundled ffmpeg has no libass — the burn-in would produce a caption-less video"; exit 1; }
+          WC="$BIN/whisper-cli"; [ "${{ matrix.platform }}" = "win" ] && WC="$BIN/whisper-cli.exe"
+          test -e "$WC" || { echo "::error::whisper-cli binary missing"; exit 1; }
+
+      - name: Build renderer / main / preload
+        run: npx electron-vite build
+
+      - name: Package installer
+        run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auto-subtitles-${{ matrix.platform }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

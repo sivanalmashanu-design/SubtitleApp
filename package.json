@@ -1,0 +1,40 @@
+{
+  "name": "auto-subtitles-desktop",
+  "version": "1.0.0",
+  "description": "Local, offline auto-subtitles — transcribe with whisper.cpp and burn captions in with ffmpeg",
+  "main": "./out/main/index.js",
+  "author": "sivan",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "fetch-binaries": "node scripts/fetch-binaries.mjs",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "pack:win": "electron-vite build && electron-builder --win --publish never",
+    "pack:mac": "electron-vite build && electron-builder --mac --publish never"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@tailwindcss/vite": "^4.1.13",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^44.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^5.0.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.0"
+  }
+}

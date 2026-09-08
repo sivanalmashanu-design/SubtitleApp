@@ -1,0 +1,48 @@
+appId: com.sivan.autosubtitles
+productName: Auto Subtitles
+copyright: Copyright © 2026 sivan
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/{.vscode,.github,scripts,src}'
+  - '!**/*.{md,map}'
+  - '!**/{tsconfig*.json,electron.vite.config.ts,electron-builder.yml,.gitignore}'
+
+# Platform-specific binaries live in resources/bin/<os>/ and are copied to
+# <app>/Contents/Resources/bin (mac) or resources/bin (win) at pack time.
+# Caption fonts are the same everywhere.
+extraResources:
+  - from: resources/bin/${os}
+    to: bin
+    filter: ['**/*']
+  - from: resources/fonts
+    to: fonts
+    filter: ['**/*.ttf']
+
+win:
+  target:
+    - nsis
+  artifactName: ${productName}-${version}-win-x64.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.video
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Unsigned build: users right-click → Open on first launch.
+  identity: null
+  gatekeeperAssess: false
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
