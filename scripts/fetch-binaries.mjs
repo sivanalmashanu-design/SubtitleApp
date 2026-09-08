@@ -20,9 +20,28 @@ mkdirSync(TMP, { recursive: true })
 
 const log = (...a) => console.log('[fetch-binaries]', ...a)
 
+// Use the CI-provided token for github.com / api.github.com so we don't hit the
+// low unauthenticated rate limit on the shared runner IPs.
+const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || ''
+function ghHeaders(url) {
+  const h = { 'user-agent': 'auto-subtitles-build' }
+  if (GH_TOKEN && /(^|\.)github\.com\//.test(url)) h.authorization = `Bearer ${GH_TOKEN}`
+  return h
+}
+
 async function download(url, dest) {
   log('GET', url)
-  const res = await fetch(url, { redirect: 'follow' })
+  let res
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    res = await fetch(url, { redirect: 'follow', headers: ghHeaders(url) })
+    if (res.ok && res.body) break
+    if (res.status === 403 || res.status === 429 || res.status >= 500) {
+      log(`  HTTP ${res.status}, retry ${attempt}/4 in ${attempt * 5}s`)
+      await new Promise((r) => setTimeout(r, attempt * 5000))
+      continue
+    }
+    break
+  }
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`)
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
 }
@@ -54,11 +73,19 @@ function findFile(dir, name) {
 }
 
 async function latestWhisperRelease() {
-  const res = await fetch('https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest', {
-    headers: { 'user-agent': 'auto-subtitles-build' },
-  })
-  if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`)
-  return res.json()
+  const url = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
+  let res
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    res = await fetch(url, { headers: ghHeaders(url) })
+    if (res.ok) return res.json()
+    if (res.status === 403 || res.status === 429) {
+      log(`GitHub API ${res.status} (rate limit), retry ${attempt}/4 in ${attempt * 8}s`)
+      await new Promise((r) => setTimeout(r, attempt * 8000))
+      continue
+    }
+    break
+  }
+  throw new Error(`GitHub API HTTP ${res.status} for latest whisper.cpp release`)
 }
 
 // ---------------------------------------------------------------- ffmpeg

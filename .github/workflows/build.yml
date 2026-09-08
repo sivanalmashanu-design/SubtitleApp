@@ -34,6 +34,10 @@ jobs:
             platform: win
             args: --win
     runs-on: ${{ matrix.os }}
+    env:
+      # authenticates github.com / api.github.com calls in fetch-binaries so the
+      # runner doesn't hit the low anonymous rate limit (HTTP 403)
+      GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +81,8 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # run even if one platform leg failed, as long as this is a version tag
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -85,8 +90,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
+      - run: ls -R artifacts || true
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: artifacts/*
+          fail_on_unmatched_files: false
           generate_release_notes: true
