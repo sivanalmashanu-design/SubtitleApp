@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { CaptionStyle } from '@shared/types'
 import { FONTS } from '@shared/fonts'
+import { loadFavFonts, toggleFavFont } from '../lib/prefs'
 
 const ADD_FONT = '__addfont__'
 
@@ -32,6 +33,9 @@ export function CaptionControls({
   const setBg = (patch: Partial<CaptionStyle['background']>): void =>
     onChange({ ...style, background: { ...style.background, ...patch } })
 
+  const [favFonts, setFavFonts] = useState<string[]>(() => loadFavFonts())
+  const starred = favFonts.includes(style.fontName)
+
   const grouped = useMemo(() => {
     const order = ['Hebrew', 'Display', 'Sans', 'Rounded', 'Script', 'Serif']
     const g: Record<string, string[]> = {}
@@ -44,6 +48,7 @@ export function CaptionControls({
       <div className="flex flex-col gap-4 text-sm">
         <label className="flex flex-col gap-1">
           <span className="text-slate-400">Font</span>
+          <div className="flex gap-1.5">
           <select
             value={style.fontName}
             disabled={disabled}
@@ -51,9 +56,18 @@ export function CaptionControls({
               if (e.target.value === ADD_FONT) onAddFont?.()
               else set('fontName', e.target.value)
             }}
-            className="rounded bg-slate-800 px-2 py-1.5"
+            className="flex-1 rounded bg-slate-800 px-2 py-1.5"
           >
             <option value="System">System default</option>
+            {favFonts.length > 0 && (
+              <optgroup label="★ Favorites">
+                {favFonts.map((n) => (
+                  <option key={`fav-${n}`} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </optgroup>
+            )}
             {grouped.map(([cat, names]) => (
               <optgroup key={cat} label={cat === 'Hebrew' ? 'Hebrew ✓' : cat}>
                 {names.map((n) => (
@@ -74,8 +88,21 @@ export function CaptionControls({
             )}
             <option value={ADD_FONT}>＋ Add font from computer…</option>
           </select>
+          <button
+            type="button"
+            disabled={disabled || style.fontName === 'System'}
+            onClick={() => setFavFonts(toggleFavFont(style.fontName))}
+            title={starred ? 'Remove from favorites' : 'Add to favorites'}
+            className={`shrink-0 rounded px-2 text-base ${
+              starred ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+            } disabled:opacity-30`}
+          >
+            {starred ? '★' : '☆'}
+          </button>
+          </div>
           <span className="text-[11px] text-slate-500">
             The “Hebrew” group has Hebrew letters — other fonts fall back to the system font for Hebrew.
+            ☆ stars a font for the Favorites list.
           </span>
         </label>
 
@@ -127,6 +154,16 @@ export function CaptionControls({
               disabled={disabled}
               onChange={(e) => set('accentColor', e.target.value)}
               className="h-8 w-12 rounded border border-slate-700 bg-transparent"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-slate-400">Outline</span>
+            <input
+              type="color"
+              value={style.outlineColor || '#000000'}
+              disabled={disabled || style.background.enabled}
+              onChange={(e) => set('outlineColor', e.target.value)}
+              className="h-8 w-12 rounded border border-slate-700 bg-transparent disabled:opacity-40"
             />
           </label>
           <label className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import type { Segment, TextOverlay } from '@shared/types'
 import { packRows } from '@shared/tracks'
 
@@ -78,8 +78,23 @@ export function Timeline({
   onStyleSegment,
 }: Props) {
   const trackRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
+  const [zoom, setZoom] = useState(1)
   const dur = Math.max(1, durationS)
+
+  // when zoomed, keep the playhead in view
+  useEffect(() => {
+    if (zoom <= 1) return
+    const sc = scrollRef.current
+    const tr = trackRef.current
+    if (!sc || !tr) return
+    const x = (currentTime / dur) * tr.clientWidth
+    const pad = sc.clientWidth * 0.15
+    if (x < sc.scrollLeft + pad || x > sc.scrollLeft + sc.clientWidth - pad) {
+      sc.scrollLeft = Math.max(0, x - sc.clientWidth / 2)
+    }
+  }, [currentTime, zoom, dur])
   const pct = (t: number): number => clamp((t / dur) * 100, 0, 100)
 
   const [menu, setMenu] = useState<Menu | null>(null)
@@ -230,7 +245,35 @@ export function Timeline({
 
   return (
     <div className="select-none rounded-xl border border-slate-800 bg-slate-900/40 p-2">
-      <div ref={trackRef} className="relative">
+      <div className="mb-1 flex items-center justify-end gap-1 text-[10px] text-slate-400">
+        <span className="mr-1">Zoom</span>
+        <button
+          type="button"
+          onClick={() => setZoom((z) => Math.max(1, +(z / 1.5).toFixed(2)))}
+          className="rounded bg-slate-800 px-1.5 leading-4 hover:bg-slate-700"
+          title="Zoom out"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom(1)}
+          className="rounded bg-slate-800 px-1.5 leading-4 hover:bg-slate-700"
+          title="Fit"
+        >
+          {zoom > 1 ? `${zoom.toFixed(1)}×` : 'fit'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom((z) => Math.min(30, +(z * 1.5).toFixed(2)))}
+          className="rounded bg-slate-800 px-1.5 leading-4 hover:bg-slate-700"
+          title="Zoom in"
+        >
+          +
+        </button>
+      </div>
+      <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden">
+      <div ref={trackRef} className="relative" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
         <div
           className="relative h-5 cursor-pointer rounded bg-slate-800/70 text-[10px] text-slate-400"
           onPointerDown={beginSeek}
@@ -304,6 +347,7 @@ export function Timeline({
         >
           <div className="absolute -top-1 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 rounded-[2px] bg-rose-400" />
         </div>
+      </div>
       </div>
 
       {menu && (

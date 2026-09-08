@@ -53,6 +53,8 @@ export interface CaptionStyle {
   accentColor: string
   /** text outline width in px at a 1080-tall reference */
   outline: number
+  /** #RRGGBB — outline / stroke colour (defaults to black) */
+  outlineColor?: string
   allCaps: boolean
   bold: boolean
   /** word-pop: lines shown on screen at once (Captions-style "page breaks") */
@@ -116,6 +118,7 @@ export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
   primaryColor: '#ffffff',
   accentColor: '#ffe14d',
   outline: 6,
+  outlineColor: '#000000',
   allCaps: true,
   bold: true,
   linesOnScreen: 2,

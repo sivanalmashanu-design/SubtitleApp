@@ -140,7 +140,7 @@ function styleRowFor(name: string, st: CaptionStyle, H: number, scale: number): 
     capFontSize(st, H),
     karaoke ? assColor(st.accentColor) : assColor(st.primaryColor),
     assColor(st.primaryColor),
-    assColor('#000000'),
+    assColor(st.outlineColor || '#000000'),
     assColor('#000000', 130),
     st.bold ? -1 : 0,
     0, 0, 0, 100, 100, 0, 0,

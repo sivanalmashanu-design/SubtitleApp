@@ -1,7 +1,16 @@
-import { useCallback, useRef, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode,
+} from 'react'
+import { createPortal } from 'react-dom'
 import type { CaptionBox } from '@shared/types'
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n))
+const CENTER_SNAP = 2.2 // % of frame — pull the box centre to 50 within this
 
 type Mode = 'move' | 'left' | 'right' | 'bottom'
 
@@ -24,6 +33,9 @@ export function DragBox({ box, editable, selected, z, onBox, onSelect, onClick, 
   const onClickRef = useRef(onClick)
   onClickRef.current = onClick
 
+  // viewport rect of the stage + which centre axes are currently snapped
+  const [guide, setGuide] = useState<{ r: DOMRect; x: boolean; y: boolean } | null>(null)
+
   const parentRect = (): DOMRect | null =>
     rootRef.current?.parentElement?.getBoundingClientRect() ?? null
 
@@ -36,7 +48,14 @@ export function DragBox({ box, editable, selected, z, onBox, onSelect, onClick, 
       const dx = ((e.clientX - d.sx) / r.width) * 100
       const dy = ((e.clientY - d.sy) / r.height) * 100
       if (d.mode === 'move') {
-        onBox({ ...d.box, xPct: clamp(d.box.xPct + dx, 2, 98), yPct: clamp(d.box.yPct + dy, 2, 98) })
+        let x = clamp(d.box.xPct + dx, 2, 98)
+        let y = clamp(d.box.yPct + dy, 2, 98)
+        const snapX = Math.abs(x - 50) <= CENTER_SNAP
+        const snapY = Math.abs(y - 50) <= CENTER_SNAP
+        if (snapX) x = 50
+        if (snapY) y = 50
+        setGuide(snapX || snapY ? { r, x: snapX, y: snapY } : null)
+        onBox({ ...d.box, xPct: x, yPct: y })
       } else if (d.mode === 'left') {
         onBox({ ...d.box, widthPct: clamp(d.box.widthPct - dx * 2, 12, 96) })
       } else if (d.mode === 'right') {
@@ -51,6 +70,7 @@ export function DragBox({ box, editable, selected, z, onBox, onSelect, onClick, 
   const onUp = useCallback(() => {
     const d = drag.current
     drag.current = null
+    setGuide(null)
     window.removeEventListener('pointermove', onMove)
     if (d && d.mode === 'move' && d.moved < 5) onClickRef.current?.()
   }, [onMove])
@@ -99,6 +119,32 @@ export function DragBox({ box, editable, selected, z, onBox, onSelect, onClick, 
 
   return (
     <div ref={rootRef} style={wrapStyle} onPointerDown={begin('move')}>
+      {guide &&
+        createPortal(
+          <>
+            {guide.x && (
+              <div
+                className="pointer-events-none fixed z-[9999] w-px bg-sky-400"
+                style={{
+                  left: guide.r.left + guide.r.width / 2,
+                  top: guide.r.top,
+                  height: guide.r.height,
+                }}
+              />
+            )}
+            {guide.y && (
+              <div
+                className="pointer-events-none fixed z-[9999] h-px bg-sky-400"
+                style={{
+                  top: guide.r.top + guide.r.height / 2,
+                  left: guide.r.left,
+                  width: guide.r.width,
+                }}
+              />
+            )}
+          </>,
+          document.body,
+        )}
       {children}
       {editable && (
         <>

@@ -63,6 +63,9 @@ const api = {
 
   onJobProgress: (cb: (p: JobProgress) => void) => subscribe('job:progress', cb),
 
+  /** Abort an in-progress export. */
+  cancelBurn: (): Promise<void> => ipcRenderer.invoke('burn:cancel'),
+
   /** Copy the finished export somewhere the user chooses. */
   saveExportCopy: (
     srcPath: string,

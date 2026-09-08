@@ -1,6 +1,6 @@
 import { basename, dirname, extname, join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { access, copyFile, writeFile } from 'node:fs/promises'
+import { access, copyFile, rm, writeFile } from 'node:fs/promises'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { CaptionStyle, Segment, TextOverlay, VideoDims, WordTiming } from '@shared/types'
 import { buildAss } from '@shared/ass'
@@ -14,6 +14,9 @@ import { burnCaptions } from './ffmpeg'
 import { emailFile, shareFile } from './share'
 
 const sender = (e: Electron.IpcMainInvokeEvent): Electron.WebContents => e.sender
+
+/** set while a burn is running so burn:cancel can kill the ffmpeg child */
+let burnAbort: AbortController | null = null
 
 const ownerWindow = (e: Electron.IpcMainInvokeEvent): BrowserWindow | undefined =>
   BrowserWindow.fromWebContents(e.sender) ?? undefined
@@ -127,20 +130,33 @@ export function registerIpc(): void {
       )
       const onProgress = (ratio: number): void =>
         sender(e).send('job:progress', { stage: 'burn', ratio })
+
+      burnAbort = new AbortController()
+      const sig = burnAbort.signal
       try {
-        await burnCaptions(payload.videoPath, ass, filePath, onProgress)
+        await burnCaptions(payload.videoPath, ass, filePath, onProgress, sig)
       } catch (err) {
+        if (sig.aborted) {
+          await rm(filePath, { force: true }).catch(() => {})
+          return { canceled: true as const }
+        }
         const code = (err as NodeJS.ErrnoException)?.code
         if (code && ['EACCES', 'EROFS', 'EPERM', 'ENOENT'].includes(code)) {
           filePath = pick(app.getPath('downloads'))
-          await burnCaptions(payload.videoPath, ass, filePath, onProgress)
+          await burnCaptions(payload.videoPath, ass, filePath, onProgress, sig)
         } else {
           throw err
         }
+      } finally {
+        burnAbort = null
       }
       return { canceled: false as const, filePath }
     },
   )
+
+  ipcMain.handle('burn:cancel', () => {
+    burnAbort?.abort()
+  })
 
   ipcMain.handle('export:saveCopy', async (e, srcPath: string) => {
     const { canceled, filePath } = await saveDialog(e, {

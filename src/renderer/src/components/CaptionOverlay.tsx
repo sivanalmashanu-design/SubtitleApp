@@ -42,7 +42,10 @@ export function CaptionOverlay({ caption, style, editable, onBoxChange, onSeekTo
     whiteSpace: 'pre-line',
   }
   // one smooth rounded rect behind the whole block — mirrors buildAss's \p1 draw
-  const boxDeco: CSSProperties = { WebkitTextStroke: `${strokeCqh}cqh #000`, paintOrder: 'stroke fill' }
+  const boxDeco: CSSProperties = {
+    WebkitTextStroke: `${strokeCqh}cqh ${style.outlineColor || '#000'}`,
+    paintOrder: 'stroke fill',
+  }
   const blockBg: CSSProperties = {
     display: 'inline-block',
     background: rgba(style.background.color, style.background.opacity),

@@ -9,9 +9,10 @@ function run(
   onLine?: (line: string) => void,
   allowNonZero = false,
   cwd?: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { windowsHide: true, cwd })
+    const child = spawn(bin, args, { windowsHide: true, cwd, signal })
     let buf = ''
     let all = ''
     const feed = (chunk: Buffer): void => {
@@ -86,6 +87,7 @@ export async function burnCaptions(
   assContent: string,
   outPath: string,
   onProgress: (ratio: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const dir = scratchDir()
   await mkdir(dir, { recursive: true })
@@ -130,6 +132,7 @@ export async function burnCaptions(
       },
       false,
       dir,
+      signal,
     )
   } finally {
     await rm(assPath, { force: true })

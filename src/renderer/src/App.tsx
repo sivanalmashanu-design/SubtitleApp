@@ -16,9 +16,12 @@ import { packRows } from '@shared/tracks'
 import { activeCaption } from './lib/activeCaption'
 import { injectCustomFonts } from './lib/injectFonts'
 import {
+  addFavStyle,
+  loadFavStyles,
   loadGuides,
   loadLastLanguage,
   loadLastStyle,
+  removeFavStyle,
   saveGuides,
   saveLastLanguage,
   saveLastStyle,
@@ -103,6 +106,7 @@ export default function App() {
   const [result, setResult] = useState<string | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [guides, setGuides] = useState<GuidePlatform>(() => loadGuides())
+  const [favStyles, setFavStyles] = useState(() => loadFavStyles())
   const [editSegId, setEditSegId] = useState<string | null>(null)
   const [panelH, setPanelH] = useState<number>(() => {
     try {
@@ -759,6 +763,15 @@ export default function App() {
             <div className="h-full bg-sky-400 transition-[width]" style={{ width: pct(progress.ratio) }} />
           </div>
           <span className="tabular-nums text-slate-400">{pct(progress.ratio)}</span>
+          {progress.stage === 'burn' && phase === 'burning' && (
+            <button
+              type="button"
+              onClick={() => window.api.cancelBurn()}
+              className="ml-2 shrink-0 rounded border border-slate-600 px-2 py-0.5 text-slate-200 hover:bg-slate-700"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
       {error && (
@@ -836,7 +849,7 @@ export default function App() {
               <CaptionOverlay
                 caption={caption}
                 style={displayStyle}
-                editable={!busy && !selectedOverlayId}
+                editable={!busy && !selectedOverlayId && !playing}
                 onBoxChange={onCaptionBox}
                 onSeekToActive={() => {
                   if (!activeSegment) return
@@ -879,7 +892,7 @@ export default function App() {
                   <DragBox
                     key={ov.id}
                     box={ov.box}
-                    editable={!busy && sel}
+                    editable={!busy && sel && !playing}
                     selected={sel}
                     z={40 - row}
                     onBox={(box) => setOverlays((p) => p.map((o) => (o.id === ov.id ? { ...o, box } : o)))}
@@ -1222,7 +1235,58 @@ export default function App() {
                 </div>
               )}
 
-              {styleTab === 'templates' && <TemplateList style={panelStyle} onChange={onStyleChange} />}
+              {styleTab === 'templates' && (
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-300">★ My styles</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const name = window.prompt('Name this style', 'My style')
+                          if (name) setFavStyles(addFavStyle(name.trim() || 'My style', panelStyle))
+                        }}
+                        className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200 hover:bg-amber-500/30"
+                      >
+                        ＋ Save current
+                      </button>
+                    </div>
+                    {favStyles.length === 0 ? (
+                      <p className="text-[11px] text-slate-500">
+                        Save the current font/size/colors/background as a reusable style.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {favStyles.map((f) => (
+                          <span
+                            key={f.id}
+                            className="group flex items-center gap-1 rounded-full bg-slate-800 py-0.5 pr-1 pl-2.5 text-xs text-slate-200"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onStyleChange({ ...f.style, box: panelStyle.box, templateId: undefined })
+                              }
+                              className="hover:text-white"
+                            >
+                              {f.name}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFavStyles(removeFavStyle(f.id))}
+                              className="rounded-full px-1 text-slate-500 hover:bg-slate-700 hover:text-rose-400"
+                              title="Delete"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <TemplateList style={panelStyle} onChange={onStyleChange} />
+                </div>
+              )}
               {styleTab === 'text' && (
                 <CaptionControls
                   section="text"

@@ -1,35 +1,53 @@
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 
-// JXA that pops the macOS share sheet (AirDrop, Messages, Mail, WhatsApp, …)
-// for a single file, then quits once the user picks a service or dismisses it.
+// JXA that pops the macOS share sheet (AirDrop, Messages, Mail, WhatsApp, …).
+// Key detail: DON'T quit the helper the instant a service is chosen — that kills
+// AirDrop/Mail mid-handoff ("nothing happens"). Instead attach a service
+// delegate and quit only once the share actually finishes / fails / is cancelled.
 const SHARE_JXA = `
 ObjC.import('AppKit');
 ObjC.import('Foundation');
 function run(argv) {
+  function done() { $.NSApp.terminate(null); }
+
   const url = $.NSURL.fileURLWithPath(argv[0]);
   const items = $.NSArray.arrayWithObject(url);
   const app = $.NSApplication.sharedApplication;
   app.setActivationPolicy($.NSApplicationActivationPolicyRegular);
-  const picker = $.NSSharingServicePicker.alloc.initWithItems(items);
-  if (!$.ShareDelegate) {
+
+  if (!$.ASShareSvcDelegate) {
     ObjC.registerSubclass({
-      name: 'ShareDelegate',
+      name: 'ASShareSvcDelegate',
+      superclass: 'NSObject',
+      protocols: ['NSSharingServiceDelegate'],
+      methods: {
+        'sharingService:didShareItems:': { types: ['void', ['id', 'id']], implementation: done },
+        'sharingService:didFailToShareItems:withError:': { types: ['void', ['id', 'id', 'id']], implementation: done }
+      }
+    });
+    ObjC.registerSubclass({
+      name: 'ASSharePickerDelegate',
       superclass: 'NSObject',
       protocols: ['NSSharingServicePickerDelegate'],
       methods: {
         'sharingServicePicker:didChooseSharingService:': {
           types: ['void', ['id', 'id']],
-          implementation: function () { $.NSApp.terminate(null); }
+          implementation: function (picker, service) {
+            if (!service) { done(); return; }             // dismissed with no choice
+            service.delegate = $.ASShareSvcDelegate.alloc.init;
+          }
         }
       }
     });
   }
-  const del = $.ShareDelegate.alloc.init;
-  picker.delegate = del;
+
+  const picker = $.NSSharingServicePicker.alloc.initWithItems(items);
+  picker.delegate = $.ASSharePickerDelegate.alloc.init;
+
   const win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(
-    $.NSMakeRect(0, 0, 440, 90), $.NSWindowStyleMaskTitled, $.NSBackingStoreBuffered, false);
-  win.title = 'Share captioned video';
+    $.NSMakeRect(0, 0, 360, 60), $.NSWindowStyleMaskTitled, $.NSBackingStoreBuffered, false);
+  win.title = 'Share';
   win.center;
   win.makeKeyAndOrderFront(null);
   app.activateIgnoringOtherApps(true);

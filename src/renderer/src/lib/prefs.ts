@@ -61,3 +61,58 @@ export function saveGuides(v: string): void {
     /* storage unavailable — no-op */
   }
 }
+
+// ---- favourites -----------------------------------------------------------
+const FAV_FONTS_KEY = 'as:favFonts'
+const FAV_STYLES_KEY = 'as:favStyles'
+
+export interface FavStyle {
+  id: string
+  name: string
+  style: CaptionStyle
+}
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+function writeJson(key: string, val: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(val))
+  } catch {
+    /* no-op */
+  }
+}
+
+export const loadFavFonts = (): string[] =>
+  readJson<string[]>(FAV_FONTS_KEY, []).filter((x) => typeof x === 'string')
+
+export function toggleFavFont(name: string): string[] {
+  const cur = loadFavFonts()
+  const next = cur.includes(name) ? cur.filter((f) => f !== name) : [...cur, name]
+  writeJson(FAV_FONTS_KEY, next)
+  return next
+}
+
+export const loadFavStyles = (): FavStyle[] => readJson<FavStyle[]>(FAV_STYLES_KEY, [])
+
+export function addFavStyle(name: string, style: CaptionStyle): FavStyle[] {
+  const fav: FavStyle = {
+    id: `fs-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
+    name,
+    style,
+  }
+  const next = [...loadFavStyles(), fav]
+  writeJson(FAV_STYLES_KEY, next)
+  return next
+}
+
+export function removeFavStyle(id: string): FavStyle[] {
+  const next = loadFavStyles().filter((f) => f.id !== id)
+  writeJson(FAV_STYLES_KEY, next)
+  return next
+}

@@ -1,6 +1,6 @@
 {
   "name": "auto-subtitles-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Local, offline auto-subtitles — transcribe with whisper.cpp and burn captions in with ffmpeg",
   "main": "./out/main/index.js",
   "author": "sivan",
