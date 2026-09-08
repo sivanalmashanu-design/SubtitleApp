@@ -9,6 +9,8 @@ export interface Segment {
   box?: CaptionBox | null
   /** per-line full style override; when set it renders this line instead of the global style */
   styleOverride?: CaptionStyle | null
+  /** per-word colour / font tweaks, keyed by word index within this line */
+  wordStyles?: Record<number, { color?: string; fontName?: string }>
 }
 
 export interface WordTiming {

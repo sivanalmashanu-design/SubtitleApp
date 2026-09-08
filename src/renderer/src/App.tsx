@@ -11,7 +11,7 @@ import { Timeline } from './components/Timeline'
 import { TranscriptEditor } from './components/TranscriptEditor'
 import { toSRT, toVTT } from '@shared/subtitles'
 import { isRtl } from '@shared/ass'
-import { isHebrewFont } from '@shared/fonts'
+import { FONT_OPTIONS, isHebrewFont } from '@shared/fonts'
 import { packRows } from '@shared/tracks'
 import { activeCaption } from './lib/activeCaption'
 import { injectCustomFonts } from './lib/injectFonts'
@@ -22,6 +22,7 @@ import {
   loadLastLanguage,
   loadLastStyle,
   removeFavStyle,
+  renameFavStyle,
   saveGuides,
   saveLastLanguage,
   saveLastStyle,
@@ -107,15 +108,21 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false)
   const [guides, setGuides] = useState<GuidePlatform>(() => loadGuides())
   const [favStyles, setFavStyles] = useState(() => loadFavStyles())
+  const [renamingFav, setRenamingFav] = useState<string | null>(null)
   const [editSegId, setEditSegId] = useState<string | null>(null)
-  const [panelH, setPanelH] = useState<number>(() => {
+  const [editWordWi, setEditWordWi] = useState<number | null>(null)
+  const numPref = (key: string, def: number): number => {
     try {
-      const v = Number(localStorage.getItem('as:panelH'))
-      return v >= 160 ? v : Math.round(window.innerHeight * 0.38)
+      const v = Number(localStorage.getItem(key))
+      return Number.isFinite(v) && v > 0 ? v : def
     } catch {
-      return 340
+      return def
     }
-  })
+  }
+  const [sideW, setSideW] = useState<number>(() =>
+    numPref('as:sideW', Math.round(window.innerWidth * 0.34)),
+  )
+  const [timelineH, setTimelineH] = useState<number>(() => numPref('as:timelineH', 210))
 
   const [tab, setTab] = useState<Tab>('captions')
   const [styleTab, setStyleTab] = useState<StyleTab>('templates')
@@ -276,21 +283,40 @@ export default function App() {
   // drop the "style this line" intent once the playhead leaves that line
   useEffect(() => {
     if (editSegId && activeSegment?.id !== editSegId) setEditSegId(null)
-  }, [activeSegment, editSegId])
+    if (editWordWi !== null) setEditWordWi(null)
+  }, [activeSegment?.id])
+
+  const setWordStyle = useCallback((wi: number, patch: { color?: string; fontName?: string } | null) => {
+    const seg = activeSegRef.current
+    if (!seg) return
+    setSegments((segs) =>
+      segs.map((s) => {
+        if (s.id !== seg.id) return s
+        const cur = { ...(s.wordStyles ?? {}) }
+        if (patch === null) delete cur[wi]
+        else cur[wi] = { ...cur[wi], ...patch }
+        return { ...s, wordStyles: Object.keys(cur).length ? cur : undefined }
+      }),
+    )
+  }, [])
 
   useEffect(() => {
     try {
-      localStorage.setItem('as:panelH', String(Math.round(panelH)))
+      localStorage.setItem('as:sideW', String(Math.round(sideW)))
+      localStorage.setItem('as:timelineH', String(Math.round(timelineH)))
     } catch {
       /* ignore */
     }
-  }, [panelH])
+  }, [sideW, timelineH])
 
-  const startPanelResize = useCallback((e: ReactPointerEvent) => {
+  const startResize = (axis: 'x' | 'y') => (e: ReactPointerEvent) => {
     e.preventDefault()
     const move = (ev: PointerEvent): void => {
-      const max = Math.round(window.innerHeight * 0.78)
-      setPanelH(Math.max(160, Math.min(max, window.innerHeight - ev.clientY)))
+      if (axis === 'x') {
+        setSideW(Math.max(280, Math.min(window.innerWidth * 0.6, window.innerWidth - ev.clientX)))
+      } else {
+        setTimelineH(Math.max(120, Math.min(window.innerHeight * 0.55, window.innerHeight - ev.clientY)))
+      }
     }
     const up = (): void => {
       window.removeEventListener('pointermove', move)
@@ -298,7 +324,7 @@ export default function App() {
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
-  }, [])
+  }
 
   // space toggles play/pause when not typing in a field
   useEffect(() => {
@@ -804,6 +830,10 @@ export default function App() {
         <ExportModal path={result} onClose={() => setExportOpen(false)} />
       )}
 
+      {/* main row: preview + transport on the left, the panel on the right */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+
       {/* preview */}
       <div className="relative min-h-0 flex-1">
         <div
@@ -850,17 +880,22 @@ export default function App() {
                 caption={caption}
                 style={displayStyle}
                 editable={!busy && !selectedOverlayId && !playing}
+                selectedWord={editWordWi}
+                onWordClick={(wi) => {
+                  if (!activeSegment) return
+                  setEditWordWi(wi)
+                  setTab('style')
+                }}
                 onBoxChange={onCaptionBox}
                 onSeekToActive={() => {
                   if (!activeSegment) return
-                  // clicking a caption pauses and parks the playhead on it; the
-                  // toggle then reflects that caption automatically
                   const el = videoRef.current
                   if (el) {
                     el.pause()
                     el.currentTime = activeSegment.start + delaySec
                   }
                   setEditSegId(null)
+                  setEditWordWi(null)
                 }}
               />
             )}
@@ -988,51 +1023,18 @@ export default function App() {
           {muted ? '🔇' : '🔊'}
         </button>
       </div>
-
-      {/* timeline */}
-      {duration > 0 && (segments.length > 0 || overlays.length > 0) && (
-        <div className="px-3 pb-2">
-          <Timeline
-            durationS={duration}
-            currentTime={currentTime}
-            segments={segments}
-            overlays={overlays}
-            delaySec={delaySec}
-            selectedOverlayId={selectedOverlayId}
-            onSeek={(t) => {
-              const el = videoRef.current
-              if (el) el.currentTime = t
-            }}
-            onSegmentTimes={onSegmentTimes}
-            onOverlayTimes={onOverlayTimes}
-            onSelectOverlay={setSelectedOverlayId}
-            onAddOverlay={addOverlayAt}
-            onMoveLane={moveBlockLane}
-            onDeleteSegment={onDeleteSegment}
-            onDeleteOverlay={onDeleteOverlay}
-            onDuplicateOverlay={onDuplicateOverlay}
-            onOpenOverlay={onOpenOverlay}
-            onOpenSegment={onOpenSegment}
-            onStyleSegment={onStyleSegment}
-          />
         </div>
-      )}
-
-      {/* drag to resize the preview / panel split */}
-      <div
-        onPointerDown={startPanelResize}
-        onDoubleClick={() => setPanelH(Math.round(window.innerHeight * 0.38))}
-        title="Drag to resize · double-click to reset"
-        className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center border-t border-slate-800 bg-slate-950/60 hover:bg-slate-800"
-      >
-        <div className="h-0.5 w-10 rounded bg-slate-600 group-hover:bg-slate-400" />
-      </div>
-
-      {/* bottom panel */}
-      <div
-        className="flex min-h-0 flex-col bg-slate-950/60"
-        style={{ height: `clamp(160px, ${Math.round(panelH)}px, 78vh)`, flex: '0 0 auto' }}
-      >
+        {/* vertical divider */}
+        <div
+          onPointerDown={startResize('x')}
+          title="Drag to resize"
+          className="w-1.5 shrink-0 cursor-col-resize bg-slate-950/70 hover:bg-sky-600"
+        />
+        {/* right panel */}
+        <div
+          className="flex min-h-0 shrink-0 flex-col border-l border-slate-800 bg-slate-950/60"
+          style={{ width: `clamp(280px, ${Math.round(sideW)}px, 60vw)` }}
+        >
         <div className="flex shrink-0 border-b border-slate-800">
           {(
             [
@@ -1228,6 +1230,58 @@ export default function App() {
                 </div>
               )}
 
+              {editWordWi !== null && activeSegment && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                  <span className="font-medium">
+                    Word:{' '}
+                    <b>
+                      {(activeSegment.text.replace(/\s+/g, ' ').trim().split(' ')[editWordWi] ?? '')
+                        .slice(0, 20) || '—'}
+                    </b>
+                  </span>
+                  <label className="flex items-center gap-1">
+                    Color
+                    <input
+                      type="color"
+                      value={activeSegment.wordStyles?.[editWordWi]?.color || panelStyle.primaryColor}
+                      onChange={(e) => setWordStyle(editWordWi, { color: e.target.value })}
+                      className="h-7 w-9 rounded border border-slate-700 bg-transparent"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Font
+                    <select
+                      value={activeSegment.wordStyles?.[editWordWi]?.fontName || ''}
+                      onChange={(e) =>
+                        setWordStyle(editWordWi, { fontName: e.target.value || undefined })
+                      }
+                      className="rounded bg-slate-800 px-1 py-0.5 text-slate-100"
+                    >
+                      <option value="">(same)</option>
+                      {FONT_OPTIONS.filter((f) => f !== 'System').map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setWordStyle(editWordWi, null)}
+                    className="rounded bg-slate-700 px-2 py-0.5 hover:bg-slate-600"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditWordWi(null)}
+                    className="rounded px-1.5 text-sky-300 hover:bg-sky-500/20"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+
               {hebrewFontMismatch && (
                 <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
                   ⚠ Your captions have Hebrew but <b>{panelStyle.fontName}</b> has no Hebrew letters —
@@ -1243,8 +1297,9 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          const name = window.prompt('Name this style', 'My style')
-                          if (name) setFavStyles(addFavStyle(name.trim() || 'My style', panelStyle))
+                          const next = addFavStyle(`Style ${favStyles.length + 1}`, panelStyle)
+                          setFavStyles(next)
+                          setRenamingFav(next[next.length - 1].id)
                         }}
                         className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200 hover:bg-amber-500/30"
                       >
@@ -1260,17 +1315,39 @@ export default function App() {
                         {favStyles.map((f) => (
                           <span
                             key={f.id}
-                            className="group flex items-center gap-1 rounded-full bg-slate-800 py-0.5 pr-1 pl-2.5 text-xs text-slate-200"
+                            className="flex items-center gap-1 rounded-full bg-slate-800 py-0.5 pr-1 pl-1 text-xs text-slate-200"
                           >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onStyleChange({ ...f.style, box: panelStyle.box, templateId: undefined })
-                              }
-                              className="hover:text-white"
-                            >
-                              {f.name}
-                            </button>
+                            {renamingFav === f.id ? (
+                              <input
+                                autoFocus
+                                defaultValue={f.name}
+                                onBlur={(e) => {
+                                  setFavStyles(renameFavStyle(f.id, e.target.value.trim() || f.name))
+                                  setRenamingFav(null)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') e.currentTarget.blur()
+                                  if (e.key === 'Escape') setRenamingFav(null)
+                                }}
+                                className="w-24 rounded bg-slate-700 px-1.5 py-0.5 text-slate-100 outline-none"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onStyleChange({
+                                    ...f.style,
+                                    box: panelStyle.box,
+                                    templateId: undefined,
+                                  })
+                                }
+                                onDoubleClick={() => setRenamingFav(f.id)}
+                                title="Click to apply · double-click to rename"
+                                className="px-1.5 hover:text-white"
+                              >
+                                {f.name}
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => setFavStyles(removeFavStyle(f.id))}
@@ -1323,7 +1400,47 @@ export default function App() {
             />
           )}
         </div>
+        </div>
       </div>
+
+      {/* timeline — full width, below the preview + panel */}
+      {duration > 0 && (segments.length > 0 || overlays.length > 0) && (
+        <>
+          <div
+            onPointerDown={startResize('y')}
+            title="Drag to resize"
+            className="h-1.5 shrink-0 cursor-row-resize border-t border-slate-800 bg-slate-950/70 hover:bg-sky-600"
+          />
+          <div
+            className="shrink-0 overflow-y-auto bg-slate-950/40 px-3 py-2"
+            style={{ height: `clamp(120px, ${Math.round(timelineH)}px, 55vh)` }}
+          >
+            <Timeline
+              durationS={duration}
+              currentTime={currentTime}
+              segments={segments}
+              overlays={overlays}
+              delaySec={delaySec}
+              selectedOverlayId={selectedOverlayId}
+              onSeek={(t) => {
+                const el = videoRef.current
+                if (el) el.currentTime = t
+              }}
+              onSegmentTimes={onSegmentTimes}
+              onOverlayTimes={onOverlayTimes}
+              onSelectOverlay={setSelectedOverlayId}
+              onAddOverlay={addOverlayAt}
+              onMoveLane={moveBlockLane}
+              onDeleteSegment={onDeleteSegment}
+              onDeleteOverlay={onDeleteOverlay}
+              onDuplicateOverlay={onDuplicateOverlay}
+              onOpenOverlay={onOpenOverlay}
+              onOpenSegment={onOpenSegment}
+              onStyleSegment={onStyleSegment}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

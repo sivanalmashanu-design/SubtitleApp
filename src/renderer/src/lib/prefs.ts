@@ -116,3 +116,9 @@ export function removeFavStyle(id: string): FavStyle[] {
   writeJson(FAV_STYLES_KEY, next)
   return next
 }
+
+export function renameFavStyle(id: string, name: string): FavStyle[] {
+  const next = loadFavStyles().map((f) => (f.id === id ? { ...f, name } : f))
+  writeJson(FAV_STYLES_KEY, next)
+  return next
+}

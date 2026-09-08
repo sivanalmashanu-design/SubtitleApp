@@ -8,13 +8,22 @@ interface Base {
   rtl: boolean
 }
 
+/** one rendered word: `wi` is its index within the whole caption line */
+export interface WordSpan {
+  text: string
+  br: boolean
+  wi: number
+  color?: string
+  fontName?: string
+}
+
 export type ActiveCaption =
   | ({ kind: 'none' } & Base)
-  | ({ kind: 'line'; text: string } & Base)
-  | ({ kind: 'pop'; chunkKey: string; text: string } & Base)
+  | ({ kind: 'line'; text: string; words: WordSpan[] } & Base)
+  | ({ kind: 'pop'; chunkKey: string; text: string; words: WordSpan[] } & Base)
   | ({
       kind: 'karaoke'
-      words: { text: string; spoken: boolean; active: boolean; br: boolean }[]
+      words: { text: string; spoken: boolean; active: boolean; br: boolean; wi: number }[]
     } & Base)
 
 const DEMO_DIMS: VideoDims = { width: 608, height: 1080 }
@@ -48,6 +57,7 @@ export function activeCaption(
           spoken: cyc > (i + 1) / 5,
           active: cyc > i / 5 && cyc <= (i + 1) / 5,
           br: false,
+          wi: i,
         })),
       }
     }
@@ -64,9 +74,17 @@ export function activeCaption(
         rtl: false,
         chunkKey: `demo-${gi}`,
         text: pg.words.map((x) => x.word).join(' '),
+        words: pg.words.map((x, i) => ({ text: x.word, br: false, wi: i })),
       }
     }
-    return { kind: 'line', segId: 'demo', box: style.box, rtl: false, text: 'your captions preview like this' }
+    return {
+      kind: 'line',
+      segId: 'demo',
+      box: style.box,
+      rtl: false,
+      text: 'your captions preview like this',
+      words: 'your captions preview like this'.split(' ').map((x, i) => ({ text: x, br: false, wi: i })),
+    }
   }
 
   const st = seg.styleOverride ?? style
@@ -77,17 +95,22 @@ export function activeCaption(
   const pages = buildPages(w, forcedBreakSet(seg.text), maxChars, clampLines(st.linesOnScreen))
   if (pages.length === 0) return { kind: 'none', segId: seg.id, box, rtl }
 
-  // pick the page whose start is the latest one <= t
+  // pick the page whose start is the latest one <= t, tracking the word offset
   let page = pages[0]
   let pageIdx = 0
+  let wordOffset = 0
+  let off = 0
   for (let i = 0; i < pages.length; i++) {
     if (pages[i].start <= t) {
       page = pages[i]
       pageIdx = i
+      wordOffset = off
     }
+    off += pages[i].words.length
   }
 
   const lineIdxSet = new Set(page.lineStarts.slice(1))
+  const ws = seg.wordStyles
 
   if (st.preset === 'karaoke') {
     return {
@@ -100,9 +123,16 @@ export function activeCaption(
         spoken: t >= x.end,
         active: t >= x.start && t < (page.words[i + 1]?.start ?? x.end),
         br: lineIdxSet.has(i),
+        wi: wordOffset + i,
       })),
     }
   }
+
+  const wordSpans: WordSpan[] = page.words.map((x, i) => {
+    const wi = wordOffset + i
+    const o = ws?.[wi]
+    return { text: x.word, br: lineIdxSet.has(i), wi, color: o?.color, fontName: o?.fontName }
+  })
 
   const text = page.words
     .map((x, i) => (lineIdxSet.has(i) ? `\n${x.word}` : x.word))
@@ -110,7 +140,7 @@ export function activeCaption(
     .replace(/ \n/g, '\n')
 
   if (st.preset === 'word-pop') {
-    return { kind: 'pop', segId: seg.id, box, rtl, chunkKey: `${seg.id}:${pageIdx}`, text }
+    return { kind: 'pop', segId: seg.id, box, rtl, chunkKey: `${seg.id}:${pageIdx}`, text, words: wordSpans }
   }
-  return { kind: 'line', segId: seg.id, box, rtl, text }
+  return { kind: 'line', segId: seg.id, box, rtl, text, words: wordSpans }
 }

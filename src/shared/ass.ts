@@ -229,7 +229,16 @@ export function buildAss(
     const place = `\\an5\\pos(${g.cx},${g.cy})`
     const boxW = clamp(Math.round((box.widthPct / 100) * W), 40, W)
     const pages = buildPages(words, forcedBreakSet(seg.text), g.maxChars, perPage)
+    const ws = seg.wordStyles
+    // per-word colour / font override tag (with a trailing reset)
+    const wtag = (wi: number): [string, string] => {
+      const o = ws?.[wi]
+      if (!o || (!o.color && !o.fontName)) return ['', '']
+      const t = `${o.color ? `\\1c${assFill(o.color)}` : ''}${o.fontName ? `\\fn${o.fontName}` : ''}`
+      return [`{${t}}`, '{\\r}']
+    }
 
+    let pageOffset = 0
     for (const page of pages) {
       const nLines = page.lineStarts.length
       const start = shift(page.start)
@@ -264,21 +273,27 @@ export function buildAss(
         for (let k = 0; k < nLines; k++) {
           if (k) body += '\\N'
           let line = ''
+          const base = page.lineStarts[k]
           pageLine(page, k).forEach((w, j) => {
-            line += `${j ? ' ' : ''}{\\k${clamp(Math.round((w.end - w.start) * 100), 1, 600)}}${clean(w.word, st.allCaps)}`
+            const [tag, rst] = wtag(pageOffset + base + j)
+            line += `${j ? ' ' : ''}{\\k${clamp(Math.round((w.end - w.start) * 100), 1, 600)}}${tag}${clean(w.word, st.allCaps)}${rst}`
           })
           body += bidi(line, rtl)
         }
         events.push(cue(CAPTION_LAYER, styleName, start, end, g, `{${place}\\fad(90,60)}${body}`))
       } else {
-        const text = Array.from({ length: nLines }, (_, k) =>
-          bidi(
+        const text = Array.from({ length: nLines }, (_, k) => {
+          const base = page.lineStarts[k]
+          return bidi(
             pageLine(page, k)
-              .map((w) => clean(w.word, st.allCaps))
+              .map((w, j) => {
+                const [tag, rst] = wtag(pageOffset + base + j)
+                return `${tag}${clean(w.word, st.allCaps)}${rst}`
+              })
               .join(' '),
             rtl,
-          ),
-        ).join('\\N')
+          )
+        }).join('\\N')
         events.push(
           cue(
             CAPTION_LAYER,
@@ -290,6 +305,7 @@ export function buildAss(
           ),
         )
       }
+      pageOffset += page.words.length
     }
   }
 
