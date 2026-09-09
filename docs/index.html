@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auto Subtitles — download</title>
+    <meta
+      name="description"
+      content="Local, offline auto-subtitles — transcribe with whisper.cpp and burn captions in with ffmpeg. Free download for macOS and Windows."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E" />
+    <style>
+      :root {
+        --bg: #0b0f17;
+        --panel: #131a26;
+        --panel-2: #0f1520;
+        --border: #223049;
+        --text: #e7ecf3;
+        --muted: #93a1b5;
+        --sky: #38bdf8;
+        --sky-ink: #06121b;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 860px; margin: 0 auto; padding: 56px 20px 80px; }
+      header { text-align: center; margin-bottom: 40px; }
+      .logo { font-size: 46px; line-height: 1; }
+      h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.02em; }
+      .tag { color: var(--muted); margin: 0 auto; max-width: 46ch; }
+      .ver {
+        display: inline-flex; gap: 8px; align-items: center;
+        margin-top: 16px; padding: 5px 12px; border: 1px solid var(--border);
+        border-radius: 999px; font-size: 13px; color: var(--muted);
+      }
+      .ver b { color: var(--text); font-weight: 600; }
+      .grid { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+      @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+      .card {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 14px; padding: 22px;
+      }
+      .card h2 { margin: 0 0 2px; font-size: 18px; }
+      .card .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+      a.btn {
+        display: block; text-align: center; text-decoration: none;
+        background: var(--sky); color: var(--sky-ink); font-weight: 700;
+        padding: 12px 16px; border-radius: 10px; transition: filter .15s;
+      }
+      a.btn:hover { filter: brightness(1.08); }
+      .asize { display: block; text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; min-height: 1em; }
+      details {
+        margin-top: 34px; background: var(--panel-2);
+        border: 1px solid var(--border); border-radius: 12px; padding: 4px 18px;
+      }
+      details + details { margin-top: 12px; }
+      summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
+      details > *:not(summary) { margin-top: 0; }
+      details p:last-child { margin-bottom: 16px; }
+      code {
+        background: #0a0e15; border: 1px solid var(--border); border-radius: 6px;
+        padding: 2px 6px; font-size: 13px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      pre {
+        background: #0a0e15; border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; overflow-x: auto; font-size: 13px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 44px; }
+      footer a { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="logo">💬</div>
+        <h1>Auto Subtitles</h1>
+        <p class="tag">
+          Transcribe your video on your own machine and burn the captions in — offline,
+          no upload, no account. Built for Hebrew-first Reels &amp; TikToks.
+        </p>
+        <div class="ver" id="ver">Latest release</div>
+      </header>
+
+      <main class="grid">
+        <section class="card">
+          <h2>macOS</h2>
+          <div class="sub">Apple Silicon (M1 or newer) · .dmg</div>
+          <a
+            class="btn"
+            id="dl-mac"
+            href="https://github.com/sivanalmashanu-design/SubtitleApp/releases/latest/download/AutoSubtitles-mac-arm64.dmg"
+            >Download for Mac</a
+          >
+          <span class="asize" id="size-mac"></span>
+        </section>
+
+        <section class="card">
+          <h2>Windows</h2>
+          <div class="sub">Windows 10 / 11 · 64-bit installer</div>
+          <a
+            class="btn"
+            id="dl-win"
+            href="https://github.com/sivanalmashanu-design/SubtitleApp/releases/latest/download/AutoSubtitles-Setup-win-x64.exe"
+            >Download for Windows</a
+          >
+          <span class="asize" id="size-win"></span>
+        </section>
+      </main>
+
+      <details open>
+        <summary>First launch on macOS</summary>
+        <p>
+          The app isn't signed with an Apple Developer certificate yet, so Gatekeeper
+          blocks it the first time. After dragging <b>Auto Subtitles</b> into Applications,
+          either right-click the app icon and choose <b>Open</b> (then <b>Open</b> again in
+          the dialog), or run this once in Terminal:
+        </p>
+        <pre>xattr -cr "/Applications/Auto Subtitles.app"</pre>
+        <p>You only need to do this once per install.</p>
+      </details>
+
+      <details>
+        <summary>First launch on Windows</summary>
+        <p>
+          The installer isn't code-signed yet, so Windows SmartScreen may show
+          “Windows protected your PC”. Click <b>More info</b> → <b>Run anyway</b> to
+          continue. This goes away once the build is signed.
+        </p>
+      </details>
+
+      <details>
+        <summary>What it does</summary>
+        <p>
+          Auto Subtitles runs <a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a>
+          locally to transcribe speech, lets you edit and style the captions (per-word and
+          per-range font, colour, size and outline), then uses a bundled
+          <code>ffmpeg</code> with <code>libass</code> to render them into the video.
+          Nothing leaves your computer.
+        </p>
+      </details>
+
+      <footer>
+        <a href="https://github.com/sivanalmashanu-design/SubtitleApp/releases">All releases &amp; changelog</a>
+        &nbsp;·&nbsp;
+        <a href="https://github.com/sivanalmashanu-design/SubtitleApp">Source on GitHub</a>
+      </footer>
+    </div>
+
+    <script>
+      // Best-effort: show the current version + file sizes from the GitHub API.
+      // The download buttons already work without this (they point at
+      // releases/latest/download/…), so any failure here is silent.
+      (function () {
+        var REPO = "sivanalmashanu-design/SubtitleApp";
+        var fmt = function (n) {
+          return n >= 1048576 ? (n / 1048576).toFixed(0) + " MB" : (n / 1024).toFixed(0) + " KB";
+        };
+        fetch("https://api.github.com/repos/" + REPO + "/releases/latest", {
+          headers: { Accept: "application/vnd.github+json" },
+        })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function (rel) {
+            var d = rel.published_at ? new Date(rel.published_at) : null;
+            var when = d
+              ? d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+              : "";
+            document.getElementById("ver").innerHTML =
+              "<b>" + (rel.tag_name || "latest") + "</b>" + (when ? " · " + when : "");
+            (rel.assets || []).forEach(function (a) {
+              var el = null;
+              if (/mac|arm64|\.dmg$/i.test(a.name)) el = document.getElementById("size-mac");
+              else if (/win|\.exe$/i.test(a.name)) el = document.getElementById("size-win");
+              if (el && a.size) el.textContent = fmt(a.size);
+            });
+          })
+          .catch(function () { /* buttons still work */ });
+      })();
+    </script>
+  </body>
+</html>

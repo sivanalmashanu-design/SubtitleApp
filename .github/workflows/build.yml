@@ -92,6 +92,13 @@ jobs:
           path: artifacts
           merge-multiple: true
       - run: ls -R artifacts || true
+      - name: Use stable asset names (so releases/latest/download/… links never change)
+        working-directory: artifacts
+        run: |
+          shopt -s nullglob
+          for f in *.dmg; do mv -v "$f" "AutoSubtitles-mac-arm64.dmg"; done
+          for f in *.exe; do mv -v "$f" "AutoSubtitles-Setup-win-x64.exe"; done
+          ls -la
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
