@@ -25,7 +25,9 @@ export function ExportModal({ path, onClose }: { path: string; onClose: () => vo
   const share = (): Promise<void> =>
     run('share', async () => {
       const r = await window.api.shareExport(path)
-      setNote(r.note ?? null)
+      setNote(
+        r.note ?? (isMac ? 'Opened the macOS share sheet — pick a method there.' : null),
+      )
     })
 
   const Btn = ({

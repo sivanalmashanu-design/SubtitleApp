@@ -26,6 +26,7 @@ import { editRuns, normText, rangeStyle, styledRuns } from '@shared/runs'
 import { packRows } from '@shared/tracks'
 import { activeCaption } from './lib/activeCaption'
 import { injectCustomFonts } from './lib/injectFonts'
+import { useUndoRedo } from './lib/useUndoRedo'
 import {
   addFavStyle,
   loadFavStyles,
@@ -285,6 +286,35 @@ export default function App() {
   )
 
   const busy = phase === 'transcribing' || phase === 'burning' || !!dl
+
+  // ---- undo / redo over the editable document ------------------------
+  const doc = useMemo(
+    () => ({ segments, style, overlays, delaySec }),
+    [segments, style, overlays, delaySec],
+  )
+  const applyDoc = useCallback((d: typeof doc) => {
+    setSegments(d.segments)
+    setStyle(d.style)
+    setOverlays(d.overlays)
+    setDelaySec(d.delaySec)
+  }, [])
+  const history = useUndoRedo(doc, applyDoc, { resetKey: projectId ?? 'none' })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k !== 'z' && k !== 'y') return
+      const t = e.target as HTMLElement | null
+      // let text fields keep their own native undo
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+      e.preventDefault()
+      if (k === 'y' || (k === 'z' && e.shiftKey)) history.redo()
+      else history.undo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [history])
 
   // style shown in the preview: a line's own override wins; otherwise the global style
   const displayStyle = activeSegment?.styleOverride ?? style
@@ -778,6 +808,28 @@ export default function App() {
           className="min-w-0 flex-1 rounded bg-transparent text-sm text-slate-200 outline-none hover:bg-slate-800/50 focus:bg-slate-800"
           spellCheck={false}
         />
+        <div className="flex shrink-0 items-center text-base leading-none">
+          <button
+            type="button"
+            onClick={history.undo}
+            disabled={!history.canUndo}
+            title="Undo (Ctrl/Cmd+Z)"
+            aria-label="Undo"
+            className="rounded-l-lg border border-slate-700 px-2 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+          >
+            &#8630;
+          </button>
+          <button
+            type="button"
+            onClick={history.redo}
+            disabled={!history.canRedo}
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+            aria-label="Redo"
+            className="-ml-px rounded-r-lg border border-slate-700 px-2 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+          >
+            &#8631;
+          </button>
+        </div>
         <span className="shrink-0 text-xs text-slate-600">
           {dims ? `${dims.width}×${dims.height}` : ''}
         </span>

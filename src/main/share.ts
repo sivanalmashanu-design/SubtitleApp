@@ -58,9 +58,13 @@ function run(argv) {
   app.activateIgnoringOtherApps(true);
   picker.showRelativeToRectOfViewPreferredEdge(win.contentView.bounds, win.contentView, 1);
 
-  // hard backstop: never let the helper linger
-  $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
-    50, $.NSApp, 'terminate:', null, false);
+  // Hard backstop: AirDrop (and sometimes Mail) don't call any delegate method
+  // when you cancel their sheet, so the helper would otherwise sit forever.
+  // Add the timer in the common run-loop modes so it still fires while a modal
+  // AirDrop panel is up (a plain scheduledTimer is stuck in default mode).
+  const killer = $.NSTimer.timerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    25, $.NSApp, 'terminate:', null, false);
+  $.NSRunLoop.currentRunLoop.addTimerForMode(killer, $.NSRunLoopCommonModes);
 
   app.run;
 }
@@ -91,17 +95,21 @@ export function shareFile(filePath: string): Promise<ShareResult> {
     const child = spawn('osascript', ['-l', 'JavaScript', '-e', SHARE_JXA, filePath], {
       stdio: 'ignore',
     })
-    const t = setTimeout(() => {
-      child.kill('SIGKILL')
-      finish({ ok: true })
-    }, 60_000)
+    // Don't make the renderer wait on the share sheet: the picker is its own
+    // window, and cancelling AirDrop never notifies us. Resolve once the sheet
+    // has had time to appear so the Export dialog's buttons free up again.
+    const settle = setTimeout(() => finish({ ok: true }), 1200)
+    // Separate leak-guard for the helper process (not tied to the promise).
+    const guard = setTimeout(() => child.kill('SIGKILL'), 90_000)
     child.on('error', () => {
-      clearTimeout(t)
+      clearTimeout(settle)
+      clearTimeout(guard)
       shell.showItemInFolder(filePath)
       finish({ ok: false, note: 'Could not open the share sheet — file revealed instead.' })
     })
     child.on('close', () => {
-      clearTimeout(t)
+      clearTimeout(settle)
+      clearTimeout(guard)
       finish({ ok: true })
     })
   })

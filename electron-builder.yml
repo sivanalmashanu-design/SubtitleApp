@@ -25,7 +25,7 @@ extraResources:
     filter: ['**/*.ttf']
 
 win:
-  icon: build/icon.png
+  icon: build/icon.ico
   target:
     - nsis
   artifactName: ${productName}-${version}-win-x64.${ext}
@@ -36,7 +36,7 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 mac:
-  icon: build/icon.png
+  icon: build/icon.icns
   target:
     - target: dmg
       arch: [arm64]
