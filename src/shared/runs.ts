@@ -70,6 +70,77 @@ export function wordFrags(start: number, word: string, runs: TextRun[]): Frag[] 
   return out.length ? out : [{ text: word }]
 }
 
+/** offset in `normText(raw)` lining up with raw-string offset `idx`
+ *  (collapses whitespace runs and drops leading whitespace, like normText) */
+export function rawToNorm(raw: string, idx: number): number {
+  let out = 0
+  let prevSpace = true
+  const n = Math.min(idx, raw.length)
+  for (let i = 0; i < n; i++) {
+    if (/\s/.test(raw[i])) {
+      if (!prevSpace) {
+        out++
+        prevSpace = true
+      }
+    } else {
+      out++
+      prevSpace = false
+    }
+  }
+  return out
+}
+
+export interface LaidWord {
+  word: string
+  /** char offset in the normalised text */
+  from: number
+  to: number
+  /** starts a new hard line (explicit "\n" in the source) */
+  br: boolean
+}
+
+/** split a plain text (e.g. a card) into words carrying their normalised-text
+ *  offsets and hard-break flags, so `runs` can be applied and it can be wrapped */
+export function textWordLayout(text: string): LaidWord[] {
+  const out: LaidWord[] = []
+  let norm = 0
+  let prevSpace = true
+  let pendingBreak = false
+  let cur = ''
+  let curStart = 0
+  const flush = (): void => {
+    if (!cur) return
+    out.push({ word: cur, from: curStart, to: curStart + cur.length, br: pendingBreak && out.length > 0 })
+    cur = ''
+    pendingBreak = false
+  }
+  for (const ch of text) {
+    if (ch === '\n') {
+      flush()
+      if (!prevSpace) {
+        norm++
+        prevSpace = true
+      }
+      pendingBreak = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      flush()
+      if (!prevSpace) {
+        norm++
+        prevSpace = true
+      }
+      continue
+    }
+    if (!cur) curStart = norm
+    cur += ch
+    norm++
+    prevSpace = false
+  }
+  flush()
+  return out
+}
+
 /** char offset of each word (in `words` order) within the normalised text */
 export function wordCharOffsets(words: string[]): number[] {
   const out: number[] = []

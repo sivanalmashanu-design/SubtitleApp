@@ -3,13 +3,14 @@ import type {
   CaptionStyle,
   Segment,
   TextOverlay,
+  TextRun,
   VideoDims,
   WordStyle,
   WordTiming,
 } from './types'
 import { fontWidthRatio } from './fonts'
 import { packRows } from './tracks'
-import { hasAnyStyle, styledRuns, wordCharOffsets, wordFrags } from './runs'
+import { hasAnyStyle, styledRuns, textWordLayout, wordCharOffsets, wordFrags } from './runs'
 import { buildPages, forcedBreakSet, pageLine, wordsForLine } from './words'
 
 // Channels stack like layers: captions on top, then card rows top-to-bottom.
@@ -77,6 +78,44 @@ function assColor(hex: string, alpha = 0): string {
   return `&H${hx(a)}${h.slice(4, 6)}${h.slice(2, 4)}${h.slice(0, 2)}`.toUpperCase()
 }
 
+/** inline override tags (no braces) for a fragment's WordStyle overrides */
+function inlineOverrideTag(o: WordStyle, sizeBase: number, scale: number): string {
+  let t = ''
+  if (o.color) t += `\\1c${assFill(o.color)}`
+  if (o.fontName) t += `\\fn${o.fontName}`
+  if (o.bold != null) t += `\\b${o.bold ? 1 : 0}`
+  if (o.sizePct != null) t += `\\fs${Math.round((sizeBase * o.sizePct) / 100)}`
+  if (o.outline != null) t += `\\bord${clamp(Math.round(o.outline * scale), 0, 40)}`
+  if (o.outlineColor) t += `\\3c${assFill(o.outlineColor)}`
+  return t
+}
+
+/** one word, cleaned and split into `{tags}frag{\r…}` pieces where `runs` cover
+ *  part of it. `charStart` is the word's offset in the normalised text.
+ *  `resetExtra` is appended after `\r` to restore a base look the ASS style row
+ *  doesn't carry (used for cards, whose colour lives in an inline tag). */
+function taggedWord(
+  charStart: number,
+  raw: string,
+  runs: TextRun[],
+  allCapsBase: boolean,
+  sizeBase: number,
+  scale: number,
+  resetExtra = '',
+): string {
+  const frags = runs.length ? wordFrags(charStart, raw, runs) : null
+  if (!frags || (frags.length === 1 && !frags[0].s)) return clean(raw, allCapsBase)
+  return frags
+    .map((f) => {
+      const o = f.s
+      const txt = clean(f.text, o?.allCaps ?? allCapsBase)
+      if (!o || !hasAnyStyle(o)) return txt
+      const t = inlineOverrideTag(o, sizeBase, scale)
+      return t ? `{${t}}${txt}{\\r${resetExtra}}` : txt
+    })
+    .join('')
+}
+
 function clean(text: string, allCaps: boolean): string {
   const t = text
     .replace(/\\/g, '/')
@@ -85,27 +124,6 @@ function clean(text: string, allCaps: boolean): string {
     .replace(/\n{2,}/g, '\n')
     .trim()
   return allCaps ? t.toUpperCase() : t
-}
-
-/** greedy word-wrap to `maxChars`, honouring explicit "\n" hard breaks */
-function wrap(text: string, maxChars: number): string {
-  return text
-    .split('\n')
-    .map((part) => {
-      const lines: string[] = []
-      let line = ''
-      for (const w of part.trim().split(/\s+/).filter(Boolean)) {
-        if (line && line.length + 1 + w.length > maxChars) {
-          lines.push(line)
-          line = w
-        } else {
-          line = line ? `${line} ${w}` : w
-        }
-      }
-      if (line) lines.push(line)
-      return lines.join('\\N')
-    })
-    .join('\\N')
 }
 
 interface Geom {
@@ -233,32 +251,9 @@ export function buildAss(
     const pages = buildPages(words, forcedBreakSet(seg.text), g.maxChars, perPage)
     const runs = styledRuns(seg)
     const charOff = wordCharOffsets(words.map((w) => w.word))
-    // inline override-tag string for one styled fragment (no braces)
-    const fragTags = (o: WordStyle): string => {
-      let t = ''
-      if (o.color) t += `\\1c${assFill(o.color)}`
-      if (o.fontName) t += `\\fn${o.fontName}`
-      if (o.bold != null) t += `\\b${o.bold ? 1 : 0}`
-      if (o.sizePct != null) t += `\\fs${Math.round((segFontSize * o.sizePct) / 100)}`
-      if (o.outline != null) t += `\\bord${clamp(Math.round(o.outline * scale), 0, 40)}`
-      if (o.outlineColor) t += `\\3c${assFill(o.outlineColor)}`
-      return t
-    }
-    // returns the cleaned word, split into styled fragments where a run covers
-    // part of it (each tagged block ends with `\r` to reset to the caption style)
-    const wtag = (wi: number, raw: string): string => {
-      const frags = runs.length ? wordFrags(charOff[wi] ?? 0, raw, runs) : null
-      if (!frags || (frags.length === 1 && !frags[0].s)) return clean(raw, st.allCaps)
-      return frags
-        .map((f) => {
-          const o = f.s
-          const txt = clean(f.text, o?.allCaps ?? st.allCaps)
-          if (!o || !hasAnyStyle(o)) return txt
-          const t = fragTags(o)
-          return t ? `{${t}}${txt}{\\r}` : txt
-        })
-        .join('')
-    }
+    // cleaned word, split into `{tags}frag{\r}` pieces where a run covers part of it
+    const wtag = (wi: number, raw: string): string =>
+      taggedWord(charOff[wi] ?? 0, raw, runs, st.allCaps, segFontSize, scale)
 
     let pageOffset = 0
     for (const page of pages) {
@@ -380,13 +375,48 @@ export function buildAss(
       }
     }
 
-    const wrapped = wrap(clean(ov.text, ov.allCaps), g.maxChars)
-    const ovLines = wrapped.split('\\N')
-    const body = ovLines.map((l) => bidi(l, ovRtl)).join('\\N')
+    const colTags = boxed
+      ? `\\1c${assColor(ov.color)}\\bord${Math.max(1, Math.round(1.5 * scale))}`
+      : `\\1c${assColor(ov.color)}\\bord${clamp(Math.round(ov.outline * scale), 0, 40)}`
+    // the card's own base look — a fragment resets to THIS (not the ASS style
+    // row, whose PrimaryColour is a fixed white) after its overrides
+    const ovBase = `\\fn${font}\\fs${ovSize}\\b${ov.bold ? 1 : 0}${colTags}`
+
+    // wrap the card into lines (hard breaks + box width), then tag each word so
+    // a `runs` override can restyle just part of it
+    const ovRuns = ov.runs ?? []
+    const laid = textWordLayout(ov.text)
+    const wrappedLines: { word: string; from: number; to: number }[][] = []
+    {
+      let line: { word: string; from: number; to: number }[] = []
+      let lineLen = 0
+      for (const w of laid) {
+        const soft = line.length > 0 && lineLen + 1 + w.word.length > g.maxChars
+        if (w.br || soft) {
+          if (line.length) wrappedLines.push(line)
+          line = []
+          lineLen = 0
+        }
+        line.push(w)
+        lineLen += (line.length > 1 ? 1 : 0) + w.word.length
+      }
+      if (line.length) wrappedLines.push(line)
+    }
+    const plainLines = wrappedLines.map((ws) => ws.map((w) => clean(w.word, ov.allCaps)).join(' '))
+    const body = wrappedLines
+      .map((ws) =>
+        bidi(
+          ws
+            .map((w) => taggedWord(w.from, w.word, ovRuns, ov.allCaps, ovSize, scale, ovBase))
+            .join(' '),
+          ovRtl,
+        ),
+      )
+      .join('\\N')
 
     // single rounded rect behind the text, matching the app preview
     if (boxed) {
-      const widest = Math.max(1, ...ovLines.map((l) => l.length))
+      const widest = Math.max(1, ...plainLines.map((l) => l.length))
       const padX = Math.round(ovSize * 0.36)
       const padY = Math.round(ovSize * 0.16)
       const bw = clamp(
@@ -394,7 +424,7 @@ export function buildAss(
         Math.round(ovSize * 1.4),
         clamp(Math.round((ov.box.widthPct / 100) * W), 40, W),
       )
-      const bh = Math.round(ovLines.length * ovSize * 1.2 + padY * 2)
+      const bh = Math.round(plainLines.length * ovSize * 1.2 + padY * 2)
       const x0 = Math.round(g.cx - bw / 2)
       const y0 = Math.round(g.cy - bh / 2)
       const r = Math.round(Math.min(bw, bh) * 0.12)
@@ -405,10 +435,7 @@ export function buildAss(
       )
     }
 
-    const colTags = boxed
-      ? `\\1c${assColor(ov.color)}\\bord${Math.max(1, Math.round(1.5 * scale))}`
-      : `\\1c${assColor(ov.color)}\\bord${clamp(Math.round(ov.outline * scale), 0, 40)}`
-    const tags = `\\an5${posTag}\\fn${font}\\fs${ovSize}\\b${ov.bold ? 1 : 0}${colTags}${anim}`
+    const tags = `\\an5${posTag}${ovBase}${anim}`
     events.push(cue(ovLayer, 'Overlay', shift(ov.start), shift(ov.end), g, `{${tags}}${body}`))
   }
 

@@ -127,6 +127,8 @@ export interface TextOverlay {
   outline: number
   animation: OverlayAnimation
   background: CaptionBackground
+  /** styled character ranges over the normalised card text */
+  runs?: TextRun[]
 }
 
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = {

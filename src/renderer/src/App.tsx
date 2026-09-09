@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { CaptionControls } from './components/CaptionControls'
 import { CaptionOverlay } from './components/CaptionOverlay'
+import { StyledText } from './components/StyledText'
 import { DragBox } from './components/DragBox'
 import { ExportModal } from './components/ExportModal'
 import { HomeScreen } from './components/HomeScreen'
@@ -460,6 +469,7 @@ export default function App() {
         outline: st.outline,
         animation: 'none',
         background: { ...st.background },
+        runs: seg.runs ? seg.runs.map((r) => ({ ...r })) : undefined,
       }
       setSegments((p) => p.filter((s) => s.id !== id))
       setOverlays((p) => [...p, ov])
@@ -474,6 +484,7 @@ export default function App() {
         end: Math.max(0.2, ov.end - off),
         text: ov.text,
         box: ov.box,
+        runs: ov.runs ? ov.runs.map((r) => ({ ...r })) : undefined,
       }
       setOverlays((p) => p.filter((o) => o.id !== id))
       setSegments((p) => [...p, seg].sort((a, b) => a.start - b.start))
@@ -522,6 +533,7 @@ export default function App() {
       id: `ov-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
       box: { ...ov.box },
       background: { ...ov.background },
+      runs: ov.runs ? ov.runs.map((r) => ({ ...r })) : undefined,
     }
     setOverlays((p) => [...p, copy])
     setSelectedOverlayId(copy.id)
@@ -957,6 +969,22 @@ export default function App() {
                               ? 'cap-fade .2s ease-out'
                               : undefined
                 const row = overlayRowMap.get(ov.id) ?? 0
+                const ovStrokeMul = ov.background.enabled ? 0.25 : 1.6
+                const ovFragStyle = (o: WordStyle | undefined): CSSProperties => {
+                  const s: CSSProperties = {}
+                  if (!o) return s
+                  if (o.color) s.color = o.color
+                  if (o.fontName) s.fontFamily = `'${o.fontName}', sans-serif`
+                  if (o.bold != null) s.fontWeight = o.bold ? 800 : 500
+                  if (o.allCaps != null) s.textTransform = o.allCaps ? 'uppercase' : 'none'
+                  if (o.sizePct != null)
+                    s.fontSize = `${((ov.fontScale * o.sizePct) / 100).toFixed(2)}cqh`
+                  if (o.outline != null || o.outlineColor) {
+                    const w = (o.outline ?? ov.outline) * ovStrokeMul
+                    s.WebkitTextStroke = `${((w / 1080) * 100).toFixed(2)}cqh ${o.outlineColor || '#000'}`
+                  }
+                  return s
+                }
                 return (
                   <DragBox
                     key={ov.id}
@@ -980,7 +1008,6 @@ export default function App() {
                         textTransform: ov.allCaps ? 'uppercase' : 'none',
                         direction: isRtl(ov.text) ? 'rtl' : 'ltr',
                         textAlign: 'center',
-                        whiteSpace: 'pre-line',
                         animation: live ? anim : undefined,
                         ...(ov.background.enabled
                           ? {
@@ -997,7 +1024,12 @@ export default function App() {
                             }),
                       }}
                     >
-                      {ov.text || 'TEXT'}
+                      <StyledText
+                        text={ov.text || 'TEXT'}
+                        runs={ov.runs}
+                        rtl={isRtl(ov.text)}
+                        fragStyle={ovFragStyle}
+                      />
                     </span>
                   </DragBox>
                 )
@@ -1524,6 +1556,8 @@ export default function App() {
               onSelect={setSelectedOverlayId}
               currentTime={currentTime}
               disabled={busy}
+              customFonts={customFonts}
+              onAddFont={addFont}
             />
           )}
         </div>

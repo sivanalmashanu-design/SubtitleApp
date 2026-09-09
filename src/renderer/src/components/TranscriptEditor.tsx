@@ -1,28 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Segment } from '@shared/types'
-import { normText } from '@shared/runs'
+import { normText, rawToNorm } from '@shared/runs'
 import { formatTimestamp } from '@shared/subtitles'
 
 const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length
-
-/** offset in `normText(raw)` that lines up with raw-string offset `idx`
- *  (collapses whitespace runs and drops leading whitespace, like normText) */
-function rawToNorm(raw: string, idx: number): number {
-  let out = 0
-  let prevSpace = true
-  for (let i = 0; i < idx && i < raw.length; i++) {
-    if (/\s/.test(raw[i])) {
-      if (!prevSpace) {
-        out++
-        prevSpace = true
-      }
-    } else {
-      out++
-      prevSpace = false
-    }
-  }
-  return out
-}
 
 interface Props {
   segments: Segment[]
