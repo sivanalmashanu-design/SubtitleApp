@@ -8,7 +8,10 @@
       name="description"
       content="Local, offline auto-subtitles — transcribe with whisper.cpp and burn captions in with ffmpeg. Free download for macOS and Windows."
     />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='10' width='56' height='44' rx='10' fill='%230b0f17' stroke='%2338bdf8' stroke-width='4'/%3E%3Crect x='16' y='34' width='32' height='6' rx='3' fill='%2338bdf8'/%3E%3Crect x='22' y='44' width='20' height='6' rx='3' fill='%237dd3fc'/%3E%3C/svg%3E"
+    />
     <style>
       :root {
         --bg: #0b0f17;
@@ -30,8 +33,9 @@
       }
       .wrap { max-width: 860px; margin: 0 auto; padding: 56px 20px 80px; }
       header { text-align: center; margin-bottom: 40px; }
-      .logo { font-size: 46px; line-height: 1; }
+      .logo { width: 76px; height: 76px; display: inline-block; }
       h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.02em; }
+      h1 .by { color: var(--muted); font-weight: 400; font-size: 18px; letter-spacing: 0; }
       .tag { color: var(--muted); margin: 0 auto; max-width: 46ch; }
       .ver {
         display: inline-flex; gap: 8px; align-items: center;
@@ -79,8 +83,12 @@
   <body>
     <div class="wrap">
       <header>
-        <div class="logo">💬</div>
-        <h1>Auto Subtitles</h1>
+        <svg class="logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="4" y="10" width="56" height="44" rx="10" fill="#0f1520" stroke="#38bdf8" stroke-width="4" />
+          <rect x="16" y="34" width="32" height="6" rx="3" fill="#38bdf8" />
+          <rect x="22" y="44" width="20" height="6" rx="3" fill="#7dd3fc" />
+        </svg>
+        <h1>Auto Subtitles <span class="by">by sivan</span></h1>
         <p class="tag">
           Transcribe your video on your own machine and burn the captions in — offline,
           no upload, no account. Built for Hebrew-first Reels &amp; TikToks.
