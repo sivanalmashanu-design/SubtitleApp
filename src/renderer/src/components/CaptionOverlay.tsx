@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { CaptionBox, CaptionStyle } from '@shared/types'
+import type { CaptionBox, CaptionStyle, WordStyle } from '@shared/types'
 import type { ActiveCaption } from '../lib/activeCaption'
 import { DragBox } from './DragBox'
 
@@ -7,12 +7,12 @@ interface Props {
   caption: ActiveCaption
   style: CaptionStyle
   editable: boolean
-  /** word index (wi) currently being restyled, if any */
-  selectedWord?: number | null
+  /** char range currently being restyled, if any */
+  selectedRange?: { from: number; to: number } | null
   onBoxChange: (box: CaptionBox) => void
   onSeekToActive: () => void
-  /** click a word to restyle just that word */
-  onWordClick?: (wi: number) => void
+  /** click a word — selects that word's char range for restyling */
+  onWordClick?: (from: number, to: number) => void
 }
 
 function rgba(hex: string, opacity: number): string {
@@ -27,7 +27,7 @@ export function CaptionOverlay({
   caption,
   style,
   editable,
-  selectedWord,
+  selectedRange,
   onBoxChange,
   onSeekToActive,
   onWordClick,
@@ -37,8 +37,8 @@ export function CaptionOverlay({
   const family =
     style.fontName === 'System' ? 'system-ui, sans-serif' : `'${style.fontName}', sans-serif`
   const showBg = style.background.enabled || style.preset === 'boxed'
-  const strokeW = showBg ? style.outline * 0.25 : style.outline * 1.6
-  const strokeCqh = ((strokeW / 1080) * 100).toFixed(2)
+  const strokeMul = showBg ? 0.25 : 1.6
+  const strokeCqh = ((style.outline * strokeMul) / 1080 * 100).toFixed(2)
   const wordClicks = editable && !!onWordClick
 
   const flex: CSSProperties = {
@@ -75,32 +75,31 @@ export function CaptionOverlay({
         ? 'cap-fade .18s ease-out'
         : undefined
 
-  const strokeMul = showBg ? 0.25 : 1.6
+  const fragStyle = (o: WordStyle | undefined): CSSProperties => {
+    const s: CSSProperties = {}
+    if (!o) return s
+    if (o.color) s.color = o.color
+    if (o.fontName) s.fontFamily = `'${o.fontName}', sans-serif`
+    if (o.bold != null) s.fontWeight = o.bold ? 800 : 500
+    if (o.allCaps != null) s.textTransform = o.allCaps ? 'uppercase' : 'none'
+    if (o.sizePct != null) s.fontSize = `${((style.fontScale * o.sizePct) / 100).toFixed(2)}cqh`
+    if (o.outline != null || o.outlineColor) {
+      const sw = (o.outline ?? style.outline) * strokeMul
+      s.WebkitTextStroke = `${((sw / 1080) * 100).toFixed(2)}cqh ${
+        o.outlineColor || style.outlineColor || '#000'
+      }`
+    }
+    return s
+  }
 
   const inner = (
     <span key={animKey} style={{ ...flex, animation }}>
       {caption.words.map((w, i) => {
-        const o = w.ws
         const kColor =
           karaoke && 'spoken' in w && (w.spoken || w.active)
             ? style.accentColor
             : style.primaryColor
-        // per-word overrides fall back to the caption's style
-        const perWord: CSSProperties = {}
-        if (o) {
-          if (o.color) perWord.color = o.color
-          if (o.fontName) perWord.fontFamily = `'${o.fontName}', sans-serif`
-          if (o.bold != null) perWord.fontWeight = o.bold ? 800 : 500
-          if (o.allCaps != null) perWord.textTransform = o.allCaps ? 'uppercase' : 'none'
-          if (o.sizePct != null)
-            perWord.fontSize = `${((style.fontScale * o.sizePct) / 100).toFixed(2)}cqh`
-          if (o.outline != null || o.outlineColor) {
-            const sw = (o.outline ?? style.outline) * strokeMul
-            perWord.WebkitTextStroke = `${((sw / 1080) * 100).toFixed(2)}cqh ${
-              o.outlineColor || style.outlineColor || '#000'
-            }`
-          }
-        }
+        const sel = selectedRange && selectedRange.to > w.from && selectedRange.from < w.to
         return (
           <span key={i} style={{ display: 'contents' }}>
             {w.br && <span style={{ flexBasis: '100%', height: 0 }} />}
@@ -109,16 +108,17 @@ export function CaptionOverlay({
                 wordClicks
                   ? (e) => {
                       e.stopPropagation()
-                      onWordClick?.(w.wi)
+                      onWordClick?.(w.from, w.to)
                     }
                   : undefined
               }
               style={{
                 display: 'inline-block',
+                whiteSpace: 'pre',
                 color: kColor,
                 cursor: wordClicks ? 'pointer' : undefined,
                 borderRadius: '2px',
-                outline: selectedWord === w.wi ? '2px solid #38bdf8' : undefined,
+                outline: sel ? '2px solid #38bdf8' : undefined,
                 outlineOffset: '1px',
                 ...(karaoke && 'active' in w
                   ? {
@@ -126,10 +126,13 @@ export function CaptionOverlay({
                       transition: 'transform .12s ease-out, color .1s',
                     }
                   : {}),
-                ...perWord,
               }}
             >
-              {w.text}
+              {w.frags.map((f, fi) => (
+                <span key={fi} style={{ display: 'inline-block', ...fragStyle(f.s) }}>
+                  {f.text}
+                </span>
+              ))}
             </span>
           </span>
         )

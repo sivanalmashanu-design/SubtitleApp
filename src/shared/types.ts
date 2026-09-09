@@ -9,11 +9,13 @@ export interface Segment {
   box?: CaptionBox | null
   /** per-line full style override; when set it renders this line instead of the global style */
   styleOverride?: CaptionStyle | null
-  /** per-word style tweaks, keyed by word index within this line */
+  /** legacy per-word style tweaks (v1.0.3) — migrated to `runs` on load */
   wordStyles?: Record<number, WordStyle>
+  /** styled character ranges over the normalised caption text */
+  runs?: TextRun[]
 }
 
-/** overrides for a single word; any unset field inherits the caption's style */
+/** overrides for a stretch of caption text; unset fields inherit the caption's style */
 export interface WordStyle {
   color?: string
   fontName?: string
@@ -25,6 +27,9 @@ export interface WordStyle {
   /** size as a % of the caption's font size (100 = same) */
   sizePct?: number
 }
+
+/** a styled character range [from, to) into the normalised caption text */
+export type TextRun = WordStyle & { from: number; to: number }
 
 export interface WordTiming {
   /** seconds */

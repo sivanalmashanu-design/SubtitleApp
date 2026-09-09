@@ -1,20 +1,18 @@
 import { FONTS } from '@shared/fonts'
 
 /** Register the bundled caption fonts.
- *  Served over `userfont://` (from the writable fonts dir that `ensureFonts()`
- *  populates on startup) rather than a `file://` URL — the packaged app's CSP
- *  `font-src 'self'` doesn't cover `file:` origins, so every bundled face
- *  silently failed and the preview fell back to a system font. */
+ *  Two `src` URLs per face: `userfont://` (works in the packaged app — the CSP
+ *  `font-src 'self'` does NOT cover the `file:` origin) with a plain `./fonts/`
+ *  fallback for `electron-vite dev`, where the Vite server serves `public/`. */
 export function injectFonts(): void {
-  if (document.getElementById('caption-fonts')) return
-  const css = FONTS.map(
-    (f) =>
-      `@font-face{font-family:'${f.name}';src:url('userfont://f/${encodeURIComponent(f.file)}') format('truetype');font-display:swap;}`,
-  ).join('\n')
-  const el = document.createElement('style')
+  const css = FONTS.map((f) => {
+    const enc = encodeURIComponent(f.file)
+    return `@font-face{font-family:'${f.name}';src:url('userfont://f/${enc}'),url('./fonts/${enc}');font-display:swap;}`
+  }).join('\n')
+  const el = document.getElementById('caption-fonts') ?? document.createElement('style')
   el.id = 'caption-fonts'
   el.textContent = css
-  document.head.appendChild(el)
+  if (!el.parentNode) document.head.appendChild(el)
 }
 
 /** Register user-imported fonts (served by the main process via userfont://). */

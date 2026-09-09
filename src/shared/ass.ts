@@ -4,10 +4,12 @@ import type {
   Segment,
   TextOverlay,
   VideoDims,
+  WordStyle,
   WordTiming,
 } from './types'
 import { fontWidthRatio } from './fonts'
 import { packRows } from './tracks'
+import { hasAnyStyle, styledRuns, wordCharOffsets, wordFrags } from './runs'
 import { buildPages, forcedBreakSet, pageLine, wordsForLine } from './words'
 
 // Channels stack like layers: captions on top, then card rows top-to-bottom.
@@ -229,23 +231,10 @@ export function buildAss(
     const place = `\\an5\\pos(${g.cx},${g.cy})`
     const boxW = clamp(Math.round((box.widthPct / 100) * W), 40, W)
     const pages = buildPages(words, forcedBreakSet(seg.text), g.maxChars, perPage)
-    const ws = seg.wordStyles
-    // returns the fully-tagged, cleaned word (per-word colour/font/bold/size/
-    // outline overrides, with a trailing reset back to the caption style)
-    const wtag = (wi: number, raw: string): string => {
-      const o = ws?.[wi]
-      const word = clean(raw, o?.allCaps ?? st.allCaps)
-      if (
-        !o ||
-        (!o.color &&
-          !o.fontName &&
-          o.bold == null &&
-          o.outline == null &&
-          !o.outlineColor &&
-          o.sizePct == null)
-      ) {
-        return word
-      }
+    const runs = styledRuns(seg)
+    const charOff = wordCharOffsets(words.map((w) => w.word))
+    // inline override-tag string for one styled fragment (no braces)
+    const fragTags = (o: WordStyle): string => {
       let t = ''
       if (o.color) t += `\\1c${assFill(o.color)}`
       if (o.fontName) t += `\\fn${o.fontName}`
@@ -253,7 +242,22 @@ export function buildAss(
       if (o.sizePct != null) t += `\\fs${Math.round((segFontSize * o.sizePct) / 100)}`
       if (o.outline != null) t += `\\bord${clamp(Math.round(o.outline * scale), 0, 40)}`
       if (o.outlineColor) t += `\\3c${assFill(o.outlineColor)}`
-      return `{${t}}${word}{\\r}`
+      return t
+    }
+    // returns the cleaned word, split into styled fragments where a run covers
+    // part of it (each tagged block ends with `\r` to reset to the caption style)
+    const wtag = (wi: number, raw: string): string => {
+      const frags = runs.length ? wordFrags(charOff[wi] ?? 0, raw, runs) : null
+      if (!frags || (frags.length === 1 && !frags[0].s)) return clean(raw, st.allCaps)
+      return frags
+        .map((f) => {
+          const o = f.s
+          const txt = clean(f.text, o?.allCaps ?? st.allCaps)
+          if (!o || !hasAnyStyle(o)) return txt
+          const t = fragTags(o)
+          return t ? `{${t}}${txt}{\\r}` : txt
+        })
+        .join('')
     }
 
     let pageOffset = 0

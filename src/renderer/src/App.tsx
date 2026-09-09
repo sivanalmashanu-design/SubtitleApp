@@ -9,9 +9,11 @@ import { OverlaysPanel } from './components/OverlaysPanel'
 import { TemplateList } from './components/TemplateList'
 import { Timeline } from './components/Timeline'
 import { TranscriptEditor } from './components/TranscriptEditor'
+import { FontPicker } from './components/FontPicker'
 import { toSRT, toVTT } from '@shared/subtitles'
 import { isRtl } from '@shared/ass'
-import { FONT_OPTIONS, isHebrewFont } from '@shared/fonts'
+import { isHebrewFont } from '@shared/fonts'
+import { editRuns, normText, rangeStyle, styledRuns } from '@shared/runs'
 import { packRows } from '@shared/tracks'
 import { activeCaption } from './lib/activeCaption'
 import { injectCustomFonts } from './lib/injectFonts'
@@ -114,7 +116,12 @@ export default function App() {
   const [favStyles, setFavStyles] = useState(() => loadFavStyles())
   const [renamingFav, setRenamingFav] = useState<string | null>(null)
   const [editSegId, setEditSegId] = useState<string | null>(null)
-  const [editWordWi, setEditWordWi] = useState<number | null>(null)
+  /** character range within a caption currently being restyled */
+  const [editRange, setEditRange] = useState<{ segId: string; from: number; to: number } | null>(
+    null,
+  )
+  const editRangeRef = useRef(editRange)
+  editRangeRef.current = editRange
   const numPref = (key: string, def: number): number => {
     try {
       const v = Number(localStorage.getItem(key))
@@ -290,27 +297,19 @@ export default function App() {
   // drop the "style this line" intent once the playhead leaves that line
   useEffect(() => {
     if (editSegId && activeSegment?.id !== editSegId) setEditSegId(null)
-    if (editWordWi !== null) setEditWordWi(null)
+    if (editRangeRef.current && activeSegment?.id !== editRangeRef.current.segId) setEditRange(null)
   }, [activeSegment?.id])
 
-  const setWordStyle = useCallback((wi: number, patch: Partial<WordStyle> | null) => {
-    const seg = activeSegRef.current
-    if (!seg) return
+  /** merge `patch` into the current `editRange` (null clears every field there) */
+  const setRangeStyle = useCallback((patch: Partial<WordStyle> | null) => {
+    const r = editRangeRef.current
+    if (!r) return
     setSegments((segs) =>
       segs.map((s) => {
-        if (s.id !== seg.id) return s
-        const cur = { ...(s.wordStyles ?? {}) }
-        if (patch === null) {
-          delete cur[wi]
-        } else {
-          const next: WordStyle = { ...cur[wi], ...patch }
-          for (const k of Object.keys(next) as (keyof WordStyle)[]) {
-            if (next[k] === undefined) delete next[k]
-          }
-          if (Object.keys(next).length) cur[wi] = next
-          else delete cur[wi]
-        }
-        return { ...s, wordStyles: Object.keys(cur).length ? cur : undefined }
+        if (s.id !== r.segId) return s
+        const len = Math.max(normText(s.text).length, r.to)
+        const next = editRuns(styledRuns(s), len, r.from, r.to, patch === null ? null : patch)
+        return { ...s, runs: next.length ? next : undefined, wordStyles: undefined }
       }),
     )
   }, [])
@@ -546,6 +545,7 @@ export default function App() {
     setPhase('idle')
     setStyle(loadLastStyle())
     setEditSegId(null)
+    setEditRange(null)
     setLanguage(loadLastLanguage())
     // assign the id up front so every autosave from here targets one stable folder
     setProjectId(crypto.randomUUID())
@@ -567,12 +567,20 @@ export default function App() {
     setDuration(0)
     setLanguage(p.language)
     setModelId(p.modelId)
-    setSegments(p.segments)
+    // migrate v1.0.3 per-word tweaks to the character-range model
+    setSegments(
+      p.segments.map((s) =>
+        s.wordStyles && !s.runs
+          ? { ...s, runs: styledRuns(s), wordStyles: undefined }
+          : s,
+      ),
+    )
     setWords((p.words as WordTiming[] | null) ?? null)
     setStyle(p.style)
     setOverlays(p.overlays)
     setDelaySec(p.delaySec)
     setEditSegId(null)
+    setEditRange(null)
     setSelectedOverlayId(null)
     setResult(null)
     setError(null)
@@ -901,11 +909,16 @@ export default function App() {
                 caption={caption}
                 style={displayStyle}
                 editable={!busy && !selectedOverlayId && !playing}
-                selectedWord={editWordWi}
-                onWordClick={(wi) => {
+                selectedRange={
+                  editRange && activeSegment?.id === editRange.segId
+                    ? { from: editRange.from, to: editRange.to }
+                    : null
+                }
+                onWordClick={(from, to) => {
                   if (!activeSegment) return
-                  setEditWordWi(wi)
+                  setEditRange({ segId: activeSegment.id, from, to })
                   setTab('style')
+                  setStyleTab('text')
                 }}
                 onBoxChange={onCaptionBox}
                 onSeekToActive={() => {
@@ -916,7 +929,7 @@ export default function App() {
                     el.currentTime = activeSegment.start + delaySec
                   }
                   setEditSegId(null)
-                  setEditWordWi(null)
+                  setEditRange(null)
                 }}
               />
             )}
@@ -1164,6 +1177,17 @@ export default function App() {
                     onChange={setSegments}
                     onSeek={seek}
                     onRestyle={onStyleSegment}
+                    onStyleRange={(id, from, to) => {
+                      const s = segmentsRef.current.find((x) => x.id === id)
+                      const el = videoRef.current
+                      if (s && el) {
+                        el.pause()
+                        el.currentTime = s.start + delayRef.current
+                      }
+                      setEditRange({ segId: id, from, to })
+                      setTab('style')
+                      setStyleTab('text')
+                    }}
                   />
                 </>
               )}
@@ -1251,64 +1275,61 @@ export default function App() {
                 </div>
               )}
 
-              {editWordWi !== null &&
-                activeSegment &&
+              {editRange &&
+                activeSegment?.id === editRange.segId &&
                 (() => {
-                  const o: WordStyle = activeSegment.wordStyles?.[editWordWi] ?? {}
-                  const wtxt =
-                    (activeSegment.text.replace(/\s+/g, ' ').trim().split(' ')[editWordWi] ?? '').slice(
-                      0,
-                      24,
-                    ) || '—'
+                  const o = rangeStyle(styledRuns(activeSegment), editRange.from, editRange.to)
+                  const label =
+                    normText(activeSegment.text).slice(editRange.from, editRange.to) || '—'
                   return (
-                    <div className="flex flex-col gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 text-xs text-sky-100">
+                    <div className="flex flex-col gap-2 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 p-3 text-xs text-fuchsia-100">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">
-                          Word: <b>{wtxt}</b>
+                        <span className="min-w-0 font-medium">
+                          Styling: <b>“{label.length > 32 ? `${label.slice(0, 32)}…` : label}”</b>
                         </span>
-                        <div className="flex gap-1.5">
+                        <div className="flex shrink-0 gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setWordStyle(editWordWi, null)}
+                            onClick={() => setRangeStyle(null)}
                             className="rounded bg-slate-700 px-2 py-0.5 hover:bg-slate-600"
                           >
-                            Reset word
+                            Reset
                           </button>
                           <button
                             type="button"
-                            onClick={() => setEditWordWi(null)}
-                            className="rounded px-1.5 text-sky-300 hover:bg-sky-500/20"
+                            onClick={() => setEditRange(null)}
+                            className="rounded px-1.5 text-fuchsia-300 hover:bg-fuchsia-500/20"
                           >
                             Done
                           </button>
                         </div>
                       </div>
+                      <p className="text-[11px] text-fuchsia-200/70">
+                        Select text in a caption (Captions tab) or click a word on the preview to pick
+                        what to style.
+                      </p>
+                      <label className="flex flex-col gap-1">
+                        <span>Font</span>
+                        <FontPicker
+                          value={o.fontName || ''}
+                          onChange={(v) => setRangeStyle({ fontName: v || undefined })}
+                          customFonts={customFonts}
+                          onAddFont={addFont}
+                          disabled={busy}
+                          allowInherit
+                          allowSystem={false}
+                          compact
+                        />
+                      </label>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                         <label className="flex items-center gap-1">
                           Color
                           <input
                             type="color"
                             value={o.color || panelStyle.primaryColor}
-                            onChange={(e) => setWordStyle(editWordWi, { color: e.target.value })}
+                            onChange={(e) => setRangeStyle({ color: e.target.value })}
                             className="h-7 w-9 rounded border border-slate-700 bg-transparent"
                           />
-                        </label>
-                        <label className="flex items-center gap-1">
-                          Font
-                          <select
-                            value={o.fontName || ''}
-                            onChange={(e) =>
-                              setWordStyle(editWordWi, { fontName: e.target.value || undefined })
-                            }
-                            className="rounded bg-slate-800 px-1 py-0.5 text-slate-100"
-                          >
-                            <option value="">(same)</option>
-                            {FONT_OPTIONS.filter((f) => f !== 'System').map((f) => (
-                              <option key={f} value={f}>
-                                {f}
-                              </option>
-                            ))}
-                          </select>
                         </label>
                         <label className="flex items-center gap-1">
                           Size
@@ -1319,8 +1340,9 @@ export default function App() {
                             step={5}
                             value={o.sizePct ?? 100}
                             onChange={(e) =>
-                              setWordStyle(editWordWi, {
-                                sizePct: Number(e.target.value) === 100 ? undefined : Number(e.target.value),
+                              setRangeStyle({
+                                sizePct:
+                                  Number(e.target.value) === 100 ? undefined : Number(e.target.value),
                               })
                             }
                             className="w-24"
@@ -1332,8 +1354,9 @@ export default function App() {
                             type="checkbox"
                             checked={o.bold ?? panelStyle.bold}
                             onChange={(e) =>
-                              setWordStyle(editWordWi, {
-                                bold: e.target.checked === panelStyle.bold ? undefined : e.target.checked,
+                              setRangeStyle({
+                                bold:
+                                  e.target.checked === panelStyle.bold ? undefined : e.target.checked,
                               })
                             }
                           />
@@ -1344,9 +1367,11 @@ export default function App() {
                             type="checkbox"
                             checked={o.allCaps ?? panelStyle.allCaps}
                             onChange={(e) =>
-                              setWordStyle(editWordWi, {
+                              setRangeStyle({
                                 allCaps:
-                                  e.target.checked === panelStyle.allCaps ? undefined : e.target.checked,
+                                  e.target.checked === panelStyle.allCaps
+                                    ? undefined
+                                    : e.target.checked,
                               })
                             }
                           />
@@ -1360,7 +1385,7 @@ export default function App() {
                             max={16}
                             value={o.outline ?? panelStyle.outline}
                             onChange={(e) =>
-                              setWordStyle(editWordWi, {
+                              setRangeStyle({
                                 outline:
                                   Number(e.target.value) === panelStyle.outline
                                     ? undefined
@@ -1375,7 +1400,7 @@ export default function App() {
                           <input
                             type="color"
                             value={o.outlineColor || panelStyle.outlineColor || '#000000'}
-                            onChange={(e) => setWordStyle(editWordWi, { outlineColor: e.target.value })}
+                            onChange={(e) => setRangeStyle({ outlineColor: e.target.value })}
                             className="h-7 w-9 rounded border border-slate-700 bg-transparent"
                           />
                         </label>

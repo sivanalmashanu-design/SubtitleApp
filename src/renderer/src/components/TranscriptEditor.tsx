@@ -1,8 +1,28 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Segment } from '@shared/types'
+import { normText } from '@shared/runs'
 import { formatTimestamp } from '@shared/subtitles'
 
 const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length
+
+/** offset in `normText(raw)` that lines up with raw-string offset `idx`
+ *  (collapses whitespace runs and drops leading whitespace, like normText) */
+function rawToNorm(raw: string, idx: number): number {
+  let out = 0
+  let prevSpace = true
+  for (let i = 0; i < idx && i < raw.length; i++) {
+    if (/\s/.test(raw[i])) {
+      if (!prevSpace) {
+        out++
+        prevSpace = true
+      }
+    } else {
+      out++
+      prevSpace = false
+    }
+  }
+  return out
+}
 
 interface Props {
   segments: Segment[]
@@ -11,13 +31,40 @@ interface Props {
   onSeek: (seconds: number) => void
   /** open the Style panel scoped to just this caption */
   onRestyle?: (id: string) => void
+  /** style a selected character range within one caption */
+  onStyleRange?: (id: string, from: number, to: number) => void
 }
 
 let nextId = 0
 const freshId = () => `seg-new-${Date.now()}-${nextId++}`
 
-export function TranscriptEditor({ segments, activeId, onChange, onSeek, onRestyle }: Props) {
+export function TranscriptEditor({
+  segments,
+  activeId,
+  onChange,
+  onSeek,
+  onRestyle,
+  onStyleRange,
+}: Props) {
   const listRef = useRef<HTMLDivElement>(null)
+  const [sel, setSel] = useState<{ id: string; from: number; to: number; label: string } | null>(
+    null,
+  )
+
+  const onTextSelect = (seg: Segment) => (e: { currentTarget: HTMLTextAreaElement }): void => {
+    const ta = e.currentTarget
+    const a = ta.selectionStart
+    const b = ta.selectionEnd
+    if (b > a) {
+      const from = rawToNorm(seg.text, a)
+      const to = rawToNorm(seg.text, b)
+      if (to > from) {
+        setSel({ id: seg.id, from, to, label: normText(seg.text).slice(from, to) })
+        return
+      }
+    }
+    setSel((s) => (s && s.id === seg.id ? null : s))
+  }
 
   useEffect(() => {
     if (!activeId) return
@@ -151,9 +198,23 @@ export function TranscriptEditor({ segments, activeId, onChange, onSeek, onResty
             rows={Math.max(seg.text.split('\n').length, Math.ceil(seg.text.length / 60))}
             onChange={(e) => patch(seg.id, { text: e.target.value })}
             onKeyDown={onKey(i)}
+            onSelect={onStyleRange ? onTextSelect(seg) : undefined}
             className="w-full resize-none rounded bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-600"
             placeholder="(empty line)"
           />
+          {onStyleRange && sel?.id === seg.id && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onStyleRange(seg.id, sel.from, sel.to)
+                setSel(null)
+              }}
+              className="mt-1 rounded bg-fuchsia-500/20 px-2 py-0.5 text-xs text-fuchsia-200 hover:bg-fuchsia-500/30"
+            >
+              🎨 Style “{sel.label.length > 24 ? `${sel.label.slice(0, 24)}…` : sel.label}”
+            </button>
+          )}
         </div>
       ))}
     </div>
