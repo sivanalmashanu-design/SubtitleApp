@@ -1,15 +1,15 @@
 import { FONTS } from '@shared/fonts'
 
-/** Register the bundled caption fonts (served from ./fonts by Vite / packaged). */
+/** Register the bundled caption fonts.
+ *  Served over `userfont://` (from the writable fonts dir that `ensureFonts()`
+ *  populates on startup) rather than a `file://` URL — the packaged app's CSP
+ *  `font-src 'self'` doesn't cover `file:` origins, so every bundled face
+ *  silently failed and the preview fell back to a system font. */
 export function injectFonts(): void {
   if (document.getElementById('caption-fonts')) return
-  // Must be relative: an absolute '/fonts/…' resolves to the filesystem root
-  // under file:// in the packaged app, so every bundled face silently failed
-  // and the preview fell back to a system font.
-  const base = new URL('./fonts/', document.baseURI).href
   const css = FONTS.map(
     (f) =>
-      `@font-face{font-family:'${f.name}';src:url('${base}${f.file}') format('truetype');font-display:swap;}`,
+      `@font-face{font-family:'${f.name}';src:url('userfont://f/${encodeURIComponent(f.file)}') format('truetype');font-display:swap;}`,
   ).join('\n')
   const el = document.createElement('style')
   el.id = 'caption-fonts'

@@ -38,6 +38,7 @@ import {
   type Segment,
   type TextOverlay,
   type VideoDims,
+  type WordStyle,
   type WordTiming,
 } from '@shared/types'
 
@@ -88,7 +89,10 @@ export default function App() {
   const [dims, setDims] = useState<VideoDims | null>(null)
   const [language, setLanguage] = useState('he')
   const [phase, setPhase] = useState<Phase>('idle')
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
   const [progress, setProgress] = useState<JobProgress | null>(null)
+  const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [segments, setSegments] = useState<Segment[]>([])
@@ -147,7 +151,10 @@ export default function App() {
       setCustomFonts(f)
       injectCustomFonts(f)
     })
-    const offJob = window.api.onJobProgress(setProgress)
+    const offJob = window.api.onJobProgress((p) => {
+      // ignore late events after a job ended (e.g. a cancelled export)
+      if (phaseRef.current === 'burning' || phaseRef.current === 'transcribing') setProgress(p)
+    })
     const offDl = window.api.onModelProgress(setDl)
     const onFs = (): void => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', onFs)
@@ -286,15 +293,23 @@ export default function App() {
     if (editWordWi !== null) setEditWordWi(null)
   }, [activeSegment?.id])
 
-  const setWordStyle = useCallback((wi: number, patch: { color?: string; fontName?: string } | null) => {
+  const setWordStyle = useCallback((wi: number, patch: Partial<WordStyle> | null) => {
     const seg = activeSegRef.current
     if (!seg) return
     setSegments((segs) =>
       segs.map((s) => {
         if (s.id !== seg.id) return s
         const cur = { ...(s.wordStyles ?? {}) }
-        if (patch === null) delete cur[wi]
-        else cur[wi] = { ...cur[wi], ...patch }
+        if (patch === null) {
+          delete cur[wi]
+        } else {
+          const next: WordStyle = { ...cur[wi], ...patch }
+          for (const k of Object.keys(next) as (keyof WordStyle)[]) {
+            if (next[k] === undefined) delete next[k]
+          }
+          if (Object.keys(next).length) cur[wi] = next
+          else delete cur[wi]
+        }
         return { ...s, wordStyles: Object.keys(cur).length ? cur : undefined }
       }),
     )
@@ -620,6 +635,7 @@ export default function App() {
     if (!video || !dims || (segments.length === 0 && overlays.length === 0)) return
     setError(null)
     setResult(null)
+    setCanceling(false)
     setProgress({ stage: 'burn', ratio: 0 })
     setPhase('burning')
     try {
@@ -642,6 +658,7 @@ export default function App() {
       setPhase('error')
     } finally {
       setProgress(null)
+      setCanceling(false)
     }
   }
 
@@ -792,10 +809,14 @@ export default function App() {
           {progress.stage === 'burn' && phase === 'burning' && (
             <button
               type="button"
-              onClick={() => window.api.cancelBurn()}
-              className="ml-2 shrink-0 rounded border border-slate-600 px-2 py-0.5 text-slate-200 hover:bg-slate-700"
+              disabled={canceling}
+              onClick={() => {
+                setCanceling(true)
+                void window.api.cancelBurn()
+              }}
+              className="ml-2 shrink-0 rounded border border-slate-600 px-2 py-0.5 text-slate-200 hover:bg-slate-700 disabled:opacity-50"
             >
-              Cancel
+              {canceling ? 'Canceling…' : 'Cancel'}
             </button>
           )}
         </div>
@@ -1230,57 +1251,138 @@ export default function App() {
                 </div>
               )}
 
-              {editWordWi !== null && activeSegment && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
-                  <span className="font-medium">
-                    Word:{' '}
-                    <b>
-                      {(activeSegment.text.replace(/\s+/g, ' ').trim().split(' ')[editWordWi] ?? '')
-                        .slice(0, 20) || '—'}
-                    </b>
-                  </span>
-                  <label className="flex items-center gap-1">
-                    Color
-                    <input
-                      type="color"
-                      value={activeSegment.wordStyles?.[editWordWi]?.color || panelStyle.primaryColor}
-                      onChange={(e) => setWordStyle(editWordWi, { color: e.target.value })}
-                      className="h-7 w-9 rounded border border-slate-700 bg-transparent"
-                    />
-                  </label>
-                  <label className="flex items-center gap-1">
-                    Font
-                    <select
-                      value={activeSegment.wordStyles?.[editWordWi]?.fontName || ''}
-                      onChange={(e) =>
-                        setWordStyle(editWordWi, { fontName: e.target.value || undefined })
-                      }
-                      className="rounded bg-slate-800 px-1 py-0.5 text-slate-100"
-                    >
-                      <option value="">(same)</option>
-                      {FONT_OPTIONS.filter((f) => f !== 'System').map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setWordStyle(editWordWi, null)}
-                    className="rounded bg-slate-700 px-2 py-0.5 hover:bg-slate-600"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditWordWi(null)}
-                    className="rounded px-1.5 text-sky-300 hover:bg-sky-500/20"
-                  >
-                    Done
-                  </button>
-                </div>
-              )}
+              {editWordWi !== null &&
+                activeSegment &&
+                (() => {
+                  const o: WordStyle = activeSegment.wordStyles?.[editWordWi] ?? {}
+                  const wtxt =
+                    (activeSegment.text.replace(/\s+/g, ' ').trim().split(' ')[editWordWi] ?? '').slice(
+                      0,
+                      24,
+                    ) || '—'
+                  return (
+                    <div className="flex flex-col gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 text-xs text-sky-100">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">
+                          Word: <b>{wtxt}</b>
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setWordStyle(editWordWi, null)}
+                            className="rounded bg-slate-700 px-2 py-0.5 hover:bg-slate-600"
+                          >
+                            Reset word
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditWordWi(null)}
+                            className="rounded px-1.5 text-sky-300 hover:bg-sky-500/20"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <label className="flex items-center gap-1">
+                          Color
+                          <input
+                            type="color"
+                            value={o.color || panelStyle.primaryColor}
+                            onChange={(e) => setWordStyle(editWordWi, { color: e.target.value })}
+                            className="h-7 w-9 rounded border border-slate-700 bg-transparent"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          Font
+                          <select
+                            value={o.fontName || ''}
+                            onChange={(e) =>
+                              setWordStyle(editWordWi, { fontName: e.target.value || undefined })
+                            }
+                            className="rounded bg-slate-800 px-1 py-0.5 text-slate-100"
+                          >
+                            <option value="">(same)</option>
+                            {FONT_OPTIONS.filter((f) => f !== 'System').map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-1">
+                          Size
+                          <input
+                            type="range"
+                            min={40}
+                            max={220}
+                            step={5}
+                            value={o.sizePct ?? 100}
+                            onChange={(e) =>
+                              setWordStyle(editWordWi, {
+                                sizePct: Number(e.target.value) === 100 ? undefined : Number(e.target.value),
+                              })
+                            }
+                            className="w-24"
+                          />
+                          <span className="w-9 tabular-nums">{o.sizePct ?? 100}%</span>
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={o.bold ?? panelStyle.bold}
+                            onChange={(e) =>
+                              setWordStyle(editWordWi, {
+                                bold: e.target.checked === panelStyle.bold ? undefined : e.target.checked,
+                              })
+                            }
+                          />
+                          Bold
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={o.allCaps ?? panelStyle.allCaps}
+                            onChange={(e) =>
+                              setWordStyle(editWordWi, {
+                                allCaps:
+                                  e.target.checked === panelStyle.allCaps ? undefined : e.target.checked,
+                              })
+                            }
+                          />
+                          CAPS
+                        </label>
+                        <label className="flex items-center gap-1">
+                          Outline
+                          <input
+                            type="range"
+                            min={0}
+                            max={16}
+                            value={o.outline ?? panelStyle.outline}
+                            onChange={(e) =>
+                              setWordStyle(editWordWi, {
+                                outline:
+                                  Number(e.target.value) === panelStyle.outline
+                                    ? undefined
+                                    : Number(e.target.value),
+                              })
+                            }
+                            className="w-20"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          Outline color
+                          <input
+                            type="color"
+                            value={o.outlineColor || panelStyle.outlineColor || '#000000'}
+                            onChange={(e) => setWordStyle(editWordWi, { outlineColor: e.target.value })}
+                            className="h-7 w-9 rounded border border-slate-700 bg-transparent"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )
+                })()}
 
               {hebrewFontMismatch && (
                 <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">

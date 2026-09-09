@@ -75,16 +75,32 @@ export function CaptionOverlay({
         ? 'cap-fade .18s ease-out'
         : undefined
 
+  const strokeMul = showBg ? 0.25 : 1.6
+
   const inner = (
     <span key={animKey} style={{ ...flex, animation }}>
       {caption.words.map((w, i) => {
-        const wc = w as typeof w & { color?: string; fontName?: string }
+        const o = w.ws
         const kColor =
-          karaoke && 'spoken' in w
-            ? w.spoken || w.active
-              ? style.accentColor
-              : style.primaryColor
+          karaoke && 'spoken' in w && (w.spoken || w.active)
+            ? style.accentColor
             : style.primaryColor
+        // per-word overrides fall back to the caption's style
+        const perWord: CSSProperties = {}
+        if (o) {
+          if (o.color) perWord.color = o.color
+          if (o.fontName) perWord.fontFamily = `'${o.fontName}', sans-serif`
+          if (o.bold != null) perWord.fontWeight = o.bold ? 800 : 500
+          if (o.allCaps != null) perWord.textTransform = o.allCaps ? 'uppercase' : 'none'
+          if (o.sizePct != null)
+            perWord.fontSize = `${((style.fontScale * o.sizePct) / 100).toFixed(2)}cqh`
+          if (o.outline != null || o.outlineColor) {
+            const sw = (o.outline ?? style.outline) * strokeMul
+            perWord.WebkitTextStroke = `${((sw / 1080) * 100).toFixed(2)}cqh ${
+              o.outlineColor || style.outlineColor || '#000'
+            }`
+          }
+        }
         return (
           <span key={i} style={{ display: 'contents' }}>
             {w.br && <span style={{ flexBasis: '100%', height: 0 }} />}
@@ -99,8 +115,7 @@ export function CaptionOverlay({
               }
               style={{
                 display: 'inline-block',
-                color: wc.color || kColor,
-                fontFamily: wc.fontName ? `'${wc.fontName}', sans-serif` : undefined,
+                color: kColor,
                 cursor: wordClicks ? 'pointer' : undefined,
                 borderRadius: '2px',
                 outline: selectedWord === w.wi ? '2px solid #38bdf8' : undefined,
@@ -111,6 +126,7 @@ export function CaptionOverlay({
                       transition: 'transform .12s ease-out, color .1s',
                     }
                   : {}),
+                ...perWord,
               }}
             >
               {w.text}

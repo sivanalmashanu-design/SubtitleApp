@@ -1,6 +1,13 @@
 import { boxFit, buildPages, forcedBreakSet, wordsForLine } from '@shared/words'
 import { isRtl } from '@shared/ass'
-import type { CaptionBox, CaptionStyle, Segment, VideoDims, WordTiming } from '@shared/types'
+import type {
+  CaptionBox,
+  CaptionStyle,
+  Segment,
+  VideoDims,
+  WordStyle,
+  WordTiming,
+} from '@shared/types'
 
 interface Base {
   segId: string | null
@@ -13,8 +20,7 @@ export interface WordSpan {
   text: string
   br: boolean
   wi: number
-  color?: string
-  fontName?: string
+  ws?: WordStyle
 }
 
 export type ActiveCaption =
@@ -23,7 +29,14 @@ export type ActiveCaption =
   | ({ kind: 'pop'; chunkKey: string; text: string; words: WordSpan[] } & Base)
   | ({
       kind: 'karaoke'
-      words: { text: string; spoken: boolean; active: boolean; br: boolean; wi: number }[]
+      words: {
+        text: string
+        spoken: boolean
+        active: boolean
+        br: boolean
+        wi: number
+        ws?: WordStyle
+      }[]
     } & Base)
 
 const DEMO_DIMS: VideoDims = { width: 608, height: 1080 }
@@ -124,14 +137,14 @@ export function activeCaption(
         active: t >= x.start && t < (page.words[i + 1]?.start ?? x.end),
         br: lineIdxSet.has(i),
         wi: wordOffset + i,
+        ws: ws?.[wordOffset + i],
       })),
     }
   }
 
   const wordSpans: WordSpan[] = page.words.map((x, i) => {
     const wi = wordOffset + i
-    const o = ws?.[wi]
-    return { text: x.word, br: lineIdxSet.has(i), wi, color: o?.color, fontName: o?.fontName }
+    return { text: x.word, br: lineIdxSet.has(i), wi, ws: ws?.[wi] }
   })
 
   const text = page.words

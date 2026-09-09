@@ -9,8 +9,21 @@ export interface Segment {
   box?: CaptionBox | null
   /** per-line full style override; when set it renders this line instead of the global style */
   styleOverride?: CaptionStyle | null
-  /** per-word colour / font tweaks, keyed by word index within this line */
-  wordStyles?: Record<number, { color?: string; fontName?: string }>
+  /** per-word style tweaks, keyed by word index within this line */
+  wordStyles?: Record<number, WordStyle>
+}
+
+/** overrides for a single word; any unset field inherits the caption's style */
+export interface WordStyle {
+  color?: string
+  fontName?: string
+  bold?: boolean
+  allCaps?: boolean
+  /** outline width, px at a 1080-tall reference */
+  outline?: number
+  outlineColor?: string
+  /** size as a % of the caption's font size (100 = same) */
+  sizePct?: number
 }
 
 export interface WordTiming {

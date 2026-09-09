@@ -14,7 +14,7 @@ function run(argv) {
   const url = $.NSURL.fileURLWithPath(argv[0]);
   const items = $.NSArray.arrayWithObject(url);
   const app = $.NSApplication.sharedApplication;
-  app.setActivationPolicy($.NSApplicationActivationPolicyRegular);
+  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory);
 
   if (!$.ASShareSvcDelegate) {
     ObjC.registerSubclass({
@@ -22,8 +22,9 @@ function run(argv) {
       superclass: 'NSObject',
       protocols: ['NSSharingServiceDelegate'],
       methods: {
+        // quit as soon as the share finishes, is cancelled, or fails
         'sharingService:didShareItems:': { types: ['void', ['id', 'id']], implementation: done },
-        'sharingService:didFailToShareItems:withError:': { types: ['void', ['id', 'id', 'id']], implementation: done }
+        'sharingService:didFailToShareItems:error:': { types: ['void', ['id', 'id', 'id']], implementation: done }
       }
     });
     ObjC.registerSubclass({
@@ -34,25 +35,33 @@ function run(argv) {
         'sharingServicePicker:didChooseSharingService:': {
           types: ['void', ['id', 'id']],
           implementation: function (picker, service) {
-            if (!service) { done(); return; }             // dismissed with no choice
-            service.delegate = $.ASShareSvcDelegate.alloc.init;
+            if (!service) { done(); return; }             // picker dismissed, nothing chosen
+            service.delegate = $.svcDel;
           }
         }
       }
     });
   }
 
+  // strong refs so the delegates aren't collected while the panel is open
+  $.svcDel = $.ASShareSvcDelegate.alloc.init;
+  const pickDel = $.ASSharePickerDelegate.alloc.init;
+
   const picker = $.NSSharingServicePicker.alloc.initWithItems(items);
-  picker.delegate = $.ASSharePickerDelegate.alloc.init;
+  picker.delegate = pickDel;
 
   const win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(
-    $.NSMakeRect(0, 0, 360, 60), $.NSWindowStyleMaskTitled, $.NSBackingStoreBuffered, false);
-  win.title = 'Share';
+    $.NSMakeRect(0, 0, 300, 40), $.NSWindowStyleMaskBorderless, $.NSBackingStoreBuffered, false);
+  win.alphaValue = 0;
   win.center;
   win.makeKeyAndOrderFront(null);
   app.activateIgnoringOtherApps(true);
-  const v = win.contentView;
-  picker.showRelativeToRectOfViewPreferredEdge(v.bounds, v, 1);
+  picker.showRelativeToRectOfViewPreferredEdge(win.contentView.bounds, win.contentView, 1);
+
+  // hard backstop: never let the helper linger
+  $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    50, $.NSApp, 'terminate:', null, false);
+
   app.run;
 }
 `
@@ -83,9 +92,9 @@ export function shareFile(filePath: string): Promise<ShareResult> {
       stdio: 'ignore',
     })
     const t = setTimeout(() => {
-      child.kill('SIGTERM')
+      child.kill('SIGKILL')
       finish({ ok: true })
-    }, 120_000)
+    }, 60_000)
     child.on('error', () => {
       clearTimeout(t)
       shell.showItemInFolder(filePath)

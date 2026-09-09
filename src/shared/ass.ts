@@ -230,12 +230,30 @@ export function buildAss(
     const boxW = clamp(Math.round((box.widthPct / 100) * W), 40, W)
     const pages = buildPages(words, forcedBreakSet(seg.text), g.maxChars, perPage)
     const ws = seg.wordStyles
-    // per-word colour / font override tag (with a trailing reset)
-    const wtag = (wi: number): [string, string] => {
+    // returns the fully-tagged, cleaned word (per-word colour/font/bold/size/
+    // outline overrides, with a trailing reset back to the caption style)
+    const wtag = (wi: number, raw: string): string => {
       const o = ws?.[wi]
-      if (!o || (!o.color && !o.fontName)) return ['', '']
-      const t = `${o.color ? `\\1c${assFill(o.color)}` : ''}${o.fontName ? `\\fn${o.fontName}` : ''}`
-      return [`{${t}}`, '{\\r}']
+      const word = clean(raw, o?.allCaps ?? st.allCaps)
+      if (
+        !o ||
+        (!o.color &&
+          !o.fontName &&
+          o.bold == null &&
+          o.outline == null &&
+          !o.outlineColor &&
+          o.sizePct == null)
+      ) {
+        return word
+      }
+      let t = ''
+      if (o.color) t += `\\1c${assFill(o.color)}`
+      if (o.fontName) t += `\\fn${o.fontName}`
+      if (o.bold != null) t += `\\b${o.bold ? 1 : 0}`
+      if (o.sizePct != null) t += `\\fs${Math.round((segFontSize * o.sizePct) / 100)}`
+      if (o.outline != null) t += `\\bord${clamp(Math.round(o.outline * scale), 0, 40)}`
+      if (o.outlineColor) t += `\\3c${assFill(o.outlineColor)}`
+      return `{${t}}${word}{\\r}`
     }
 
     let pageOffset = 0
@@ -275,8 +293,7 @@ export function buildAss(
           let line = ''
           const base = page.lineStarts[k]
           pageLine(page, k).forEach((w, j) => {
-            const [tag, rst] = wtag(pageOffset + base + j)
-            line += `${j ? ' ' : ''}{\\k${clamp(Math.round((w.end - w.start) * 100), 1, 600)}}${tag}${clean(w.word, st.allCaps)}${rst}`
+            line += `${j ? ' ' : ''}{\\k${clamp(Math.round((w.end - w.start) * 100), 1, 600)}}${wtag(pageOffset + base + j, w.word)}`
           })
           body += bidi(line, rtl)
         }
@@ -286,10 +303,7 @@ export function buildAss(
           const base = page.lineStarts[k]
           return bidi(
             pageLine(page, k)
-              .map((w, j) => {
-                const [tag, rst] = wtag(pageOffset + base + j)
-                return `${tag}${clean(w.word, st.allCaps)}${rst}`
-              })
+              .map((w, j) => wtag(pageOffset + base + j, w.word))
               .join(' '),
             rtl,
           )

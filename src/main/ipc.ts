@@ -128,11 +128,14 @@ export function registerIpc(): void {
         payload.overlays ?? [],
         payload.delaySec ?? 0,
       )
-      const onProgress = (ratio: number): void =>
-        sender(e).send('job:progress', { stage: 'burn', ratio })
-
       burnAbort = new AbortController()
       const sig = burnAbort.signal
+      const onProgress = (ratio: number): void => {
+        // once cancelled, stop emitting — a late event would re-show the bar
+        if (!sig.aborted && !sender(e).isDestroyed()) {
+          sender(e).send('job:progress', { stage: 'burn', ratio })
+        }
+      }
       try {
         await burnCaptions(payload.videoPath, ass, filePath, onProgress, sig)
       } catch (err) {
