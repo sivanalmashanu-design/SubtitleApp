@@ -31,6 +31,9 @@ function createWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#0b0f17',
     title: 'Auto Subtitles',
+    // packaged builds get the icon from the .exe / .app bundle (electron-builder);
+    // this only covers the dev window / taskbar entry.
+    ...(is.dev ? { icon: join(import.meta.dirname, '../../build/icon.png') } : {}),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false,
