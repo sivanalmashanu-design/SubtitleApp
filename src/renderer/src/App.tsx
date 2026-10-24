@@ -937,7 +937,6 @@ export default function App() {
             className="caption-stage relative overflow-hidden rounded-xl border border-slate-800 bg-black"
             style={stageStyle}
             onPointerDown={() => setSelectedOverlayId(null)}
-            onDoubleClick={toggleFullscreen}
           >
             <SafeAreaGuides platform={guides} />
             <video
@@ -949,11 +948,6 @@ export default function App() {
                 e.stopPropagation()
                 const el = e.currentTarget
                 el.paused ? void el.play().catch(() => {}) : el.pause()
-              }}
-              onDoubleClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                toggleFullscreen()
               }}
               onLoadedMetadata={(e) => {
                 setDims({

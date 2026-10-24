@@ -1,6 +1,7 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import type { CaptionBox, CaptionStyle, WordStyle } from '@shared/types'
 import type { ActiveCaption } from '../lib/activeCaption'
+import { bidiGroups } from '../lib/bidiGroups'
 import { DragBox } from './DragBox'
 
 interface Props {
@@ -92,51 +93,79 @@ export function CaptionOverlay({
     return s
   }
 
+  const renderWord = (w: (typeof caption.words)[number], ltr: boolean): ReactElement => {
+    const kColor =
+      karaoke && 'spoken' in w && (w.spoken || w.active) ? style.accentColor : style.primaryColor
+    const sel = selectedRange && selectedRange.to > w.from && selectedRange.from < w.to
+    return (
+      <span
+        key={w.wi}
+        onPointerDown={
+          wordClicks
+            ? (e) => {
+                e.stopPropagation()
+                onWordClick?.(w.from, w.to)
+              }
+            : undefined
+        }
+        style={{
+          display: 'inline-block',
+          whiteSpace: 'pre',
+          color: kColor,
+          cursor: wordClicks ? 'pointer' : undefined,
+          borderRadius: '2px',
+          outline: sel ? '2px solid #38bdf8' : undefined,
+          outlineOffset: '1px',
+          // an English word keeps its own LTR direction (and its punctuation)
+          // even though the caption as a whole is right-to-left
+          ...(ltr ? { direction: 'ltr' as const, unicodeBidi: 'isolate' as const } : {}),
+          ...(karaoke && 'active' in w
+            ? {
+                transform: w.active ? 'scale(1.08)' : 'none',
+                transition: 'transform .12s ease-out, color .1s',
+              }
+            : {}),
+        }}
+      >
+        {w.frags.map((f, fi) => (
+          <span key={fi} style={{ display: 'inline-block', ...fragStyle(f.s) }}>
+            {f.text}
+          </span>
+        ))}
+      </span>
+    )
+  }
+
+  // Hebrew + English: bundle consecutive English words into one LTR box so the
+  // browser doesn't flip their order (the export already gets this right)
+  const groups = bidiGroups(
+    caption.words,
+    (w) => w.text,
+    (w) => w.br,
+    caption.rtl,
+  )
+
   const inner = (
     <span key={animKey} style={{ ...flex, animation }}>
-      {caption.words.map((w, i) => {
-        const kColor =
-          karaoke && 'spoken' in w && (w.spoken || w.active)
-            ? style.accentColor
-            : style.primaryColor
-        const sel = selectedRange && selectedRange.to > w.from && selectedRange.from < w.to
-        return (
-          <span key={i} style={{ display: 'contents' }}>
-            {w.br && <span style={{ flexBasis: '100%', height: 0 }} />}
+      {groups.map((g, gi) => (
+        <span key={gi} style={{ display: 'contents' }}>
+          {g.items[0].br && <span style={{ flexBasis: '100%', height: 0 }} />}
+          {g.ltr ? (
             <span
-              onPointerDown={
-                wordClicks
-                  ? (e) => {
-                      e.stopPropagation()
-                      onWordClick?.(w.from, w.to)
-                    }
-                  : undefined
-              }
               style={{
-                display: 'inline-block',
-                whiteSpace: 'pre',
-                color: kColor,
-                cursor: wordClicks ? 'pointer' : undefined,
-                borderRadius: '2px',
-                outline: sel ? '2px solid #38bdf8' : undefined,
-                outlineOffset: '1px',
-                ...(karaoke && 'active' in w
-                  ? {
-                      transform: w.active ? 'scale(1.08)' : 'none',
-                      transition: 'transform .12s ease-out, color .1s',
-                    }
-                  : {}),
+                display: 'inline-flex',
+                direction: 'ltr',
+                unicodeBidi: 'isolate',
+                columnGap: '0.28em',
               }}
             >
-              {w.frags.map((f, fi) => (
-                <span key={fi} style={{ display: 'inline-block', ...fragStyle(f.s) }}>
-                  {f.text}
-                </span>
-              ))}
+              {g.items.map((w) => renderWord(w, true))}
             </span>
-          </span>
-        )
-      })}
+          ) : (
+            renderWord(g.items[0], false)
+          )}
+        </span>
+      ))}
     </span>
   )
 
