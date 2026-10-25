@@ -29,21 +29,44 @@ function ghHeaders(url) {
   return h
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** "fetch failed" hides the real reason in `.cause` (ECONNRESET, ETIMEDOUT, …) */
+const describe = (e) =>
+  `${e.message}${e.cause ? ` [${e.cause.code || ''} ${e.cause.message || e.cause}]` : ''}`
+
+/** fetch that also retries when the connection itself fails (not just HTTP 5xx) */
+async function fetchRetry(url, init = {}, label = url) {
+  let lastErr
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const res = await fetch(url, init)
+      if (res.ok || !(res.status === 403 || res.status === 429 || res.status >= 500)) return res
+      lastErr = new Error(`HTTP ${res.status}`)
+    } catch (e) {
+      lastErr = e
+    }
+    log(`  ${label}: ${describe(lastErr)} — retry ${attempt}/5 in ${attempt * 5}s`)
+    await sleep(attempt * 5000)
+  }
+  throw new Error(`${label}: ${describe(lastErr)}`)
+}
+
 async function download(url, dest) {
   log('GET', url)
-  let res
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    res = await fetch(url, { redirect: 'follow', headers: ghHeaders(url) })
-    if (res.ok && res.body) break
-    if (res.status === 403 || res.status === 429 || res.status >= 500) {
-      log(`  HTTP ${res.status}, retry ${attempt}/4 in ${attempt * 5}s`)
-      await new Promise((r) => setTimeout(r, attempt * 5000))
-      continue
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetchRetry(url, { redirect: 'follow', headers: ghHeaders(url) }, url)
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`)
+    try {
+      await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
+      return
+    } catch (e) {
+      // connection dropped mid-body — start the download over
+      log(`  body stream failed (${describe(e)}), attempt ${attempt}/3`)
+      if (attempt === 3) throw e
+      await sleep(attempt * 5000)
     }
-    break
   }
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`)
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
 }
 
 function unzip(zip, destDir) {
@@ -80,18 +103,9 @@ const WHISPER_TAG = process.env.WHISPER_TAG || 'b4938'
 
 async function latestWhisperRelease() {
   const url = `https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/${WHISPER_TAG}`
-  let res
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    res = await fetch(url, { headers: ghHeaders(url) })
-    if (res.ok) return res.json()
-    if (res.status === 403 || res.status === 429) {
-      log(`GitHub API ${res.status} (rate limit), retry ${attempt}/4 in ${attempt * 8}s`)
-      await new Promise((r) => setTimeout(r, attempt * 8000))
-      continue
-    }
-    break
-  }
-  throw new Error(`GitHub API HTTP ${res.status} for whisper.cpp release ${WHISPER_TAG}`)
+  const res = await fetchRetry(url, { headers: ghHeaders(url) }, `whisper.cpp release ${WHISPER_TAG}`)
+  if (!res.ok) throw new Error(`GitHub API HTTP ${res.status} for whisper.cpp release ${WHISPER_TAG}`)
+  return res.json()
 }
 
 // ---------------------------------------------------------------- ffmpeg
@@ -270,13 +284,20 @@ async function fetchFonts() {
 
 // --------------------------------------------------------------------
 
+let step = 'start'
 try {
+  step = 'ffmpeg'
   await fetchFfmpeg()
+  step = 'whisper-cli'
   await fetchWhisper()
+  step = 'fonts'
   await fetchFonts()
   log('done. Contents of', OUT)
   for (const f of readdirSync(OUT)) log('  ', f)
 } catch (err) {
-  console.error('[fetch-binaries] FAILED:', err.message)
+  const detail = `during "${step}": ${describe(err)}`
+  console.error('[fetch-binaries] FAILED', detail)
+  // surfaces on the Actions run page / API even when the raw logs aren't visible
+  console.error(`::error title=fetch-binaries failed::${detail.replace(/\r?\n/g, ' ')}`)
   process.exit(1)
 }
