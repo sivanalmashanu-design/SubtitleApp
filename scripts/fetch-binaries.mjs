@@ -72,8 +72,14 @@ function findFile(dir, name) {
   return null
 }
 
+// Pinned on purpose. This used to follow `releases/latest`, which broke on
+// 2026-10-06 when a tag-only release (v1.9.5, no binaries attached) became
+// "latest". b4938 is what every shipped build up to v1.0.5 was built against.
+// Override with WHISPER_TAG=<tag> to try a newer one.
+const WHISPER_TAG = process.env.WHISPER_TAG || 'b4938'
+
 async function latestWhisperRelease() {
-  const url = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
+  const url = `https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/${WHISPER_TAG}`
   let res
   for (let attempt = 1; attempt <= 4; attempt++) {
     res = await fetch(url, { headers: ghHeaders(url) })
@@ -85,7 +91,7 @@ async function latestWhisperRelease() {
     }
     break
   }
-  throw new Error(`GitHub API HTTP ${res.status} for latest whisper.cpp release`)
+  throw new Error(`GitHub API HTTP ${res.status} for whisper.cpp release ${WHISPER_TAG}`)
 }
 
 // ---------------------------------------------------------------- ffmpeg
